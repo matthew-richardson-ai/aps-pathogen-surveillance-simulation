@@ -1,0 +1,44 @@
+# ============================================================
+# APS - Autonomous Pathogen Surveillance Simulation
+# Core Dependencies
+# ============================================================
+
+
+### Remember you can use pip install -r requirements.txt
+### This installs the requirements
+
+# Data Processing & Numerical Computing
+numpy
+pandas
+
+# Machine Learning
+scikit-learn
+
+# Graph Modeling
+networkx
+
+# Genomic Sequence Processing
+biopython
+
+# Visualization
+matplotlib
+
+# Configuration
+PyYAML
+
+# Environment Variables
+python-dotenv
+
+# Testing
+pytest
+
+# ============================================================
+# Future / Experimental Dependencies
+# ============================================================
+
+# Deep-learning framework
+# NOTE: Installation may depend on CPU/GPU configuration.
+# torch
+
+# Hugging Face model support for genomic AI experiments
+# transformers
