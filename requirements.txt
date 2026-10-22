@@ -1,5 +1,5 @@
-# ============================================================
-# APS - Autonomous Pathogen Surveillance Simulation
+﻿# ============================================================
+# APS - Adaptive Pathogen Surveillance Simulation
 # Core Dependencies
 # ============================================================
 
@@ -17,9 +17,6 @@ scikit-learn
 # Graph Modeling
 networkx
 
-# Genomic Sequence Processing
-biopython
-
 # Visualization
 matplotlib
 
@@ -34,6 +31,7 @@ pytest
 
 # ============================================================
 # Future / Experimental Dependencies
+# biopython  # deferred genomics extension
 # ============================================================
 
 # Deep-learning framework

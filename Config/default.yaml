@@ -1,21 +1,26 @@
-project:
-  name: "Autonomous Pathogen Surveillance"
+﻿project:
+  name: "Adaptive Pathogen Surveillance"
   acronym: "APS"
   mode: "simulation"
   random_seed: 42
 
+facility:
+  zones: 8
+
 simulation:
-  duration_steps: 100
-  initial_infected_nodes: 1
+  source_intensity: 1.0
+  decay_rate: 0.65
+  runs: 100
 
 sensors:
-  sensitivity: 0.95
-  specificity: 0.98
-  false_positive_rate: 0.02
-  false_negative_rate: 0.05
+  noise_std: 0.08
+  missing_rate: 0.10
+  min_reading: 0.0
+  max_reading: 1.0
 
 localization:
-  top_k: 3
+  baseline: "strongest_sensor"
 
-evaluation:
-  runs: 100
+# Second-half feature intentionally left off at this checkpoint.
+adaptive:
+  enabled: false

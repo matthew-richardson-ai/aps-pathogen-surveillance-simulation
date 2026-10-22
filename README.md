@@ -1,34 +1,57 @@
-# Autonomous Pathogen Surveillance (APS)
+﻿# Adaptive Pathogen Surveillance (APS)
 
 ## Pathogen Surveillance Simulation
 
-APS is an undergraduate artificial intelligence project that explores a
-simulated environmental pathogen surveillance system.
+APS is an undergraduate artificial intelligence project investigating whether AI can identify the likely source of a simulated outbreak from imperfect environmental sensor data, and whether targeted additional sampling can improve that prediction.
 
-The project investigates how artificial intelligence techniques could be
-combined to process simulated pathogen observations, analyze genomic
-variation, estimate probable outbreak-source locations, and generate
-response recommendations.
+The class project is intentionally simulation-only. It does not perform clinical diagnosis, wet-lab testing, physical biosensing, or production pathogen surveillance.
 
-## Project Pipeline
+## Approved Course Pipeline
 
 ```text
-Synthetic Environment
+Simulated Facility
         |
         v
-Outbreak Simulation
+Hidden Outbreak Source
         |
         v
-Simulated Sensors
+Spatial Signal Propagation
         |
         v
-Genomic Analysis
+Noisy / Missing Sensor Readings
         |
         v
 Source Localization
         |
         v
-AI Response
+Adaptive Additional Sampling
         |
         v
-Evaluation
+Quantitative Evaluation
+```
+
+## Halfway Checkpoint
+
+Implemented:
+- fixed 8-zone NetworkX facility graph
+- hidden outbreak-source selection
+- exponential signal decay by graph distance
+- configurable sensor noise and missing data
+- strongest-sensor baseline localization
+- exact-source and graph-distance metrics
+- automated tests for core simulator behavior
+- reproducible random seeds
+
+Planned for the second half:
+- dataset generation for repeated experiments
+- Logistic Regression localization
+- Random Forest localization
+- prediction confidence
+- one-step adaptive sampling
+- noise/missing-data sensitivity experiments
+- comparison of static versus adaptive sampling
+- final visualization/demo interface
+
+## Scope Management
+
+Earlier APS concepts included genomic analysis and automated response recommendations. Those modules have been moved under `Future/` and are explicitly outside the CSC 4240 class implementation. They remain only as possible post-course extensions.
