@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import random
-
 import numpy as np
+import sys
+from pathlib import Path
+
+# Find set starting path in directory. For VSCode users.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from Evaluation.metrics import source_distance
 from Localization.baselines import strongest_sensor
