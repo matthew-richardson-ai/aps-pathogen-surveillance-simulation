@@ -1,83 +1,134 @@
-# Simulator Assumptions and Validation
+# Simulation and Sensor Validation
 
 **Author:** Emmanuel Zuniga  
 **Project:** Adaptive Pathogen Surveillance (APS)  
 **Course:** CSC 4240/5240 Artificial Intelligence
 
-## Purpose
+## My Role
 
-This document explains the assumptions used by the APS simulator and proposes
-ways to validate its behavior. The simulator creates controlled sensor data so
-the team can evaluate methods for locating the source of a simulated outbreak.
+My responsibility is simulation and environmental modeling. I build on
+the existing facility and sensor code, document its assumptions, and
+check that it behaves consistently under different sensor conditions.
 
-APS is a class project simulation. It is not a model of real pathogen
-transmission and is not intended for clinical or real-world surveillance use.
+## Simulation Assumptions
 
-## Simulator Assumptions
+The facility consists of eight connected zones represented as a
+NetworkX graph. Connections are undirected, and distance is measured
+by the number of connections along the shortest path.
 
-### Facility
-
-The simulated facility is a fixed, connected graph containing eight zones.
-Connections between zones are treated as undirected. The simulator does not
-currently account for room size, airflow, walls, doors, or other physical
-features.
-
-### Outbreak source and signal
-
-One zone is selected as the hidden outbreak source. The ideal signal in each
-zone depends on its shortest-path distance from that source:
+One zone is selected as the hidden source. Ideal signal strength
+decreases with graph distance using:
 
 `signal = source_intensity * exp(-decay_rate * distance)`
 
-This means the ideal signal is strongest at the source and decreases with
-distance. This is a simplified spatial rule, not a biological transmission
-model.
+The demonstrations use a source intensity of 1.0 and a decay rate
+of 0.65. Sensor readings can include random noise and missing values.
+Available readings are clipped to the range 0.0 to 1.0.
 
-### Sensor readings
+A fixed random seed makes runs repeatable with the same settings
+and software environment.
 
-The simulator adds random noise to readings and can mark readings as missing.
-Readings are clipped to the configured minimum and maximum values. The current
-default settings include a source intensity of `1.0`, a decay rate of `0.65`,
-a noise standard deviation of `0.08`, and a missing-data rate of `0.10`.
+## My Contributions
 
-### Current localization baseline
+### Simulation Demonstration
 
-The baseline predicts that the source is the zone with the strongest available
-sensor reading. It ignores missing readings. If every reading is missing, it
-cannot make a prediction.
+I created `simulation_demo.py` to run four scenarios automatically
+using seed 43 and the same source location.
 
-## Validation
+| Scenario | Noise Standard Deviation | Missing Rate |
+|---|---:|---:|
+| Ideal conditions | 0.00 | 0.00 |
+| Noise only | 0.08 | 0.00 |
+| Missing readings only | 0.00 | 0.30 |
+| Noise and missing readings | 0.08 | 0.30 |
 
-### Checks already covered by project tests
+Each scenario displays the source, graph distances, ideal signals,
+observed readings, and number of missing sensors.
 
-The existing tests check that:
+### Automated Validation
 
-- the facility contains eight connected zones;
-- selecting a source with the same random seed is reproducible;
-- the ideal signal is strongest at the source;
-- signal strength decreases as graph distance increases; and
-- zero noise and zero missingness preserve the ideal readings.
+I created `validate_simulation.py` to check all eight possible source
+zones. For each source, the script checks that:
 
-Tests also check baseline behavior with missing readings and the source
-accuracy and graph-distance metrics.
+- The source signal is 1.0 and strictly stronger than other signals.
+- Ideal signals decrease as graph distance increases.
+- Zero noise and zero missingness preserve ideal readings.
+- Reusing the same seed reproduces noisy and missing readings.
+- Available readings remain between 0.0 and 1.0.
+- A missing rate of 100% removes every reading.
 
-### Additional validation proposed
+One additional check confirms that source selection repeats when
+the same seed is used.
 
-1. Use every zone as the source and confirm that its ideal signal is strongest.
-2. Run simulations with different noise and missing-data settings to see how
-   sensor readings and localization performance change.
-3. Run many simulations with different random seeds and report exact-source
-   accuracy and average graph distance from the true source.
-4. Repeat simulations with the same seed and settings to check that results are
-   reproducible.
-5. Compare the baseline with future machine-learning and adaptive-sampling
-   methods using the same simulated cases.
+## Results
 
-These are proposed checks; results should be added after the experiments are
-run.
+The validation script completed successfully:
+
+```text
+Results: 49/49 checks passed
+All validation checks passed.
+```
+
+In the demonstration with seed 43, the selected source was `zone_1`.
+Under ideal conditions, all observed readings matched their ideal
+values. Adding noise changed sensor readings. With a missing rate
+of 30%, three of the eight sensors were missing in this example.
+Combining noise and missingness produced both effects.
+
+The missing rate is a probability for each sensor, so an individual
+run does not need to have exactly 30% of its readings missing.
+
+These results confirm the checked simulator behavior. They do not
+measure source-prediction accuracy.
+
+## How to Run
+
+Run these commands from the project's main folder.
+
+Install the libraries needed by these scripts:
+
+```bash
+python -m pip install networkx numpy
+```
+
+Run the demonstration:
+
+```bash
+python Team/Emmanuel/simulation_demo.py
+```
+
+Run the validation checks:
+
+```bash
+python Team/Emmanuel/validate_simulation.py
+```
+
+Save the outputs:
+
+```bash
+python Team/Emmanuel/simulation_demo.py > Team/Emmanuel/simulation_results.txt
+python Team/Emmanuel/validate_simulation.py > Team/Emmanuel/validation_results.txt
+```
+
+## Data Handling
+
+The demonstration displays the true source for inspection.
+The true source must remain separate from prediction inputs
+when preparing data for machine-learning models.
 
 ## Limitations
 
-The simulator uses a small, fixed facility and simplified signal decay. Its
-results can help compare methods under controlled conditions, but they do not
-show how real pathogens or physical sensors behave.
+This is a controlled classroom simulation. Graph distance does not
+represent actual airflow or biological transmission. The model
+does not account for room size, ventilation, doors, or movement.
+
+The validation checks cover defined rules and selected sensor
+settings. They do not establish real-world accuracy or evaluate
+prediction performance across many random seeds.
+
+## Next Steps
+
+- Run additional seeds and sensor settings.
+- Coordinate simulation outputs with the dataset developer.
+- Support team evaluation of source-location methods under
+  different noise and missing-data conditions.
