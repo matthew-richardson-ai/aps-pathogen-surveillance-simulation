@@ -1,0 +1,74 @@
+Random seed: 43
+True source: zone_1
+
+============================================================
+Scenario: Ideal conditions
+Noise standard deviation: 0.0
+Missing rate: 0%
+============================================================
+Zone      Distance    Ideal       Observed
+----------------------------------------------
+zone_1    0           1.000       1.000
+zone_2    2           0.273       0.273
+zone_3    1           0.522       0.522
+zone_4    2           0.273       0.273
+zone_5    2           0.273       0.273
+zone_6    3           0.142       0.142
+zone_7    4           0.074       0.074
+zone_8    5           0.039       0.039
+
+Missing sensors: 0/8
+
+============================================================
+Scenario: Noise only
+Noise standard deviation: 0.08
+Missing rate: 0%
+============================================================
+Zone      Distance    Ideal       Observed
+----------------------------------------------
+zone_1    0           1.000       1.000
+zone_2    2           0.273       0.350
+zone_3    1           0.522       0.449
+zone_4    2           0.273       0.289
+zone_5    2           0.273       0.371
+zone_6    3           0.142       0.133
+zone_7    4           0.074       0.046
+zone_8    5           0.039       0.041
+
+Missing sensors: 0/8
+
+============================================================
+Scenario: Missing readings only
+Noise standard deviation: 0.0
+Missing rate: 30%
+============================================================
+Zone      Distance    Ideal       Observed
+----------------------------------------------
+zone_1    0           1.000       1.000
+zone_2    2           0.273       0.273
+zone_3    1           0.522       Missing
+zone_4    2           0.273       Missing
+zone_5    2           0.273       0.273
+zone_6    3           0.142       0.142
+zone_7    4           0.074       0.074
+zone_8    5           0.039       Missing
+
+Missing sensors: 3/8
+
+============================================================
+Scenario: Noise and missing readings
+Noise standard deviation: 0.08
+Missing rate: 30%
+============================================================
+Zone      Distance    Ideal       Observed
+----------------------------------------------
+zone_1    0           1.000       1.000
+zone_2    2           0.273       0.113
+zone_3    1           0.522       Missing
+zone_4    2           0.273       Missing
+zone_5    2           0.273       0.289
+zone_6    3           0.142       0.240
+zone_7    4           0.074       0.065
+zone_8    5           0.039       Missing
+
+Missing sensors: 3/8
