@@ -19,6 +19,8 @@ if str(ROOT) not in sys.path:
 from Simulation.facility import build_facility
 from live_engine import Scenario, simulate, sample_one_more, predict_baseline, baseline_error, batch_baseline
 from Localization.ml_pipeline import train_models, predict_models
+from Adaptive.sampler import source_prior, choose_next_zone
+from OB.adaptive_experiments import compare_sampling_policies, summarize_comparison
 
 st.set_page_config(page_title="APS | Simulation Lab", page_icon="🧬", layout="wide")
 
@@ -87,6 +89,8 @@ if st.session_state.get("active_params") != params:
     st.session_state.reveal_truth = False
     st.session_state.pop("manual_zone", None)
     st.session_state.pop("batch_results", None)
+    st.session_state.pop("adaptive_results", None)
+    st.session_state.pop("auto_sample_details", None)
 snap = st.session_state.active_snapshot
 
 # Stable layout of the canonical facility topology, not Owen's example graph.
@@ -178,7 +182,7 @@ st.markdown('<div class="aps-tag">ARTIFICIAL INTELLIGENCE / INTERACTIVE SIMULATI
 st.title("Adaptive Pathogen Surveillance")
 st.caption("Scenario Lab | Explore how incomplete, noisy sensor data changes source localization.")
 
-live, models_tab, batch_tab, about = st.tabs(["Live facility", "Model comparison", "Experiment lab", "Methods & next steps"])
+live, models_tab, adaptive_tab, batch_tab, about = st.tabs(["Live facility", "Model comparison", "Adaptive sampling", "Experiment lab", "Methods & next steps"])
 
 with live:
     st.markdown('<div class="aps-notice">This dashboard runs the existing APS simulation. The green ring represents the strongest-sensor baseline, not a trained ML prediction. A single extra measurement can be requested manually.</div>', unsafe_allow_html=True)
@@ -210,17 +214,49 @@ with live:
         st.plotly_chart(reading_plot(snap), use_container_width=True,
                         config={"displaylogo": False})
         st.subheader("One additional measurement")
-        st.caption("Choose an unavailable zone. This manual step demonstrates updated evidence; it is not the AI adaptive policy.")
+        st.caption("Compare a manual additional sample with model-assisted sampling that selects a currently unobserved zone.")
         candidates = sorted([z for z, value in snap.readings.items() if value is None])
         if snap.requested_zone is None and candidates:
             target = st.selectbox("Sample location", candidates, key="manual_zone")
-            if st.button("Request manual sample", type="primary", use_container_width=True):
+            if st.button("Request manual sample", use_container_width=True):
+                st.session_state.pop("auto_sample_details", None)
                 st.session_state.active_snapshot = sample_one_more(snap, target)
                 st.rerun()
+            selector_model = st.selectbox(
+                "Information-gain selector", ["Logistic Regression", "Random Forest"],
+                key="adaptive_selector_model",
+            )
+            if st.button("AI selects next zone", type="primary", use_container_width=True):
+                try:
+                    trained = load_ml_artifacts()
+                    prior = source_prior(trained.models[selector_model], snap.readings)
+                    choice = choose_next_zone(
+                        build_facility(), snap.readings, prior,
+                        source_intensity=params.source_intensity,
+                        decay_rate=params.decay_rate,
+                    )
+                    if choice is not None:
+                        st.session_state.active_snapshot = sample_one_more(snap, choice.zone)
+                        st.session_state.auto_sample_details = {
+                            "model": selector_model,
+                            "zone": choice.zone,
+                            "gain": choice.expected_gain_bits,
+                        }
+                        st.session_state.ml_enabled = True
+                        st.rerun()
+                except (FileNotFoundError, ValueError) as error:
+                    st.error(f"Adaptive selection failed: {error}")
         elif snap.requested_zone:
             st.success(f"New reading at {snap.requested_zone}: {snap.requested_reading:.3f}")
+            selected = st.session_state.get("auto_sample_details")
+            if selected:
+                st.caption(
+                    f"{selected['model']} selected {selected['zone']} "
+                    f"(estimated information gain: {selected['gain']:.3f} bits)."
+                )
             if st.button("Reset sampling", use_container_width=True):
                 st.session_state.active_snapshot = simulate(params)
+                st.session_state.pop("auto_sample_details", None)
                 st.rerun()
         else:
             st.info("No unavailable zone remains to sample.")
@@ -317,6 +353,101 @@ with models_tab:
         except (FileNotFoundError, ValueError) as exc:
             st.error(f"Unable to train or evaluate models: {exc}")
 
+with adaptive_tab:
+    st.subheader("Does intelligent sensor selection actually help?")
+    st.write(
+        "Compare no additional measurement, one random measurement, and "
+        "one model-selected measurement on exactly the same seeded scenarios. "
+        "Both sampling strategies are allowed one extra measurement."
+    )
+    c_trials, c_method = st.columns([1, 2])
+    with c_trials:
+        experiment_trials = st.slider(
+            "Matched simulated events", min_value=20, max_value=200,
+            value=60, step=20, key="adaptive_trial_count",
+        )
+    with c_method:
+        selected_models = st.multiselect(
+            "Models to evaluate",
+            ["Logistic Regression", "Random Forest"],
+            default=["Logistic Regression", "Random Forest"],
+            key="adaptive_evaluation_models",
+        )
+    if st.button("Run matched sampling experiment", type="primary"):
+        if not selected_models:
+            st.error("Select at least one model.")
+        else:
+            try:
+                st.session_state.adaptive_results = compare_sampling_policies(
+                    load_ml_artifacts(), params,
+                    trials=experiment_trials,
+                    model_names=tuple(selected_models),
+                )
+            except (FileNotFoundError, ValueError) as error:
+                st.error(f"Adaptive experiment failed: {error}")
+    matched = st.session_state.get("adaptive_results")
+    if matched is None:
+        st.info("Run the experiment to generate paired comparisons and accuracy charts.")
+    else:
+        summary = summarize_comparison(matched)
+        results_view = summary.copy()
+        results_view["accuracy"] = results_view["accuracy"].map(lambda a: f"{a:.1%}")
+        results_view["mean_graph_error"] = results_view["mean_graph_error"].map(
+            lambda x: "N/A" if pd.isna(x) else f"{x:.3f}"
+        )
+        results_view["additional_samples"] = results_view["additional_samples"].map(
+            lambda x: f"{x:.1f}"
+        )
+        results_view.columns = [
+            "Model", "Sampling strategy", "Trials", "Exact-source accuracy",
+            "Mean graph error (edges)", "Extra samples per run",
+        ]
+        st.dataframe(results_view, hide_index=True, use_container_width=True)
+        fig = go.Figure()
+        label_map = {
+            "static": "No additional sample",
+            "random": "Random selection",
+            "information_gain": "Expected information gain",
+        }
+        for name, group in summary.groupby("model", sort=False):
+            fig.add_trace(go.Bar(
+                name=name,
+                x=[label_map[x] for x in group["strategy"]],
+                y=group["accuracy"] * 100,
+                text=[f"{a:.1%}" for a in group["accuracy"]],
+                textposition="outside",
+            ))
+        fig.update_layout(
+            barmode="group", title="Accuracy on matched simulated events",
+            yaxis=dict(title="Exact-source accuracy (%)", range=[0, 105],
+                       gridcolor="#27394e"),
+            paper_bgcolor=PANEL, plot_bgcolor=PANEL,
+            font=dict(color=MUTED), height=390,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        for name, group in summary.groupby("model", sort=False):
+            rates = dict(zip(group["strategy"], group["accuracy"]))
+            st.caption(
+                f"{name}: information gain vs. random = "
+                f"{100 * (rates['information_gain'] - rates['random']):+.1f} "
+                f"percentage points. A negative value means random sampling did better."
+            )
+        st.download_button(
+            "Download paired experiment CSV",
+            matched.to_csv(index=False).encode("utf-8"),
+            file_name="aps_sampling_policy_comparison.csv", mime="text/csv",
+        )
+        with st.expander("Inspect all paired predictions"):
+            st.dataframe(matched, hide_index=True, use_container_width=True)
+    st.caption(
+        "This is a controlled spatial snapshot simulation. Source truth is used "
+        "only for scoring. The information-gain policy uses model probabilities "
+        "that are not calibrated and assumes the simulator's graph-distance "
+        "signal model and sampling noise are known. It is not guaranteed to "
+        "outperform random sampling."
+    )
+
+
 with batch_tab:
     st.subheader("Baseline-only repeated experiments")
     st.write("Run independent seeded simulations at the current settings, with a randomized hidden source each time. These are genuine synthetic APS results, not estimates of ML-model accuracy.")
@@ -355,5 +486,6 @@ with about:
     st.write("The facility, source selection, exponential graph-distance decay, noisy or missing readings, and baseline all come directly from APS core modules. Each display is a single spatial snapshot, not time-dependent propagation.")
     st.write("Implemented: interactive graph, simulated conditions, source reveal, manual follow-up sample, deterministic seeds, baseline metrics and trial CSV export.")
     st.write("Optional: Logistic Regression and Random Forest predictions are available after training on Justin's saved synthetic dataset. These class probabilities are not calibrated confidence estimates.")
-    st.write("Not yet implemented: calibrated confidence, AI-selected adaptive sampling, time-dependent transport, or production biosensing.")
-    st.write("Next: implement an information-based single-sample policy and evaluate it against random sampling using matched trials.")
+    st.write("Implemented experimentally: expected-information-gain zone selection and paired comparison against random additional sampling. The selector uses uncalibrated model probabilities and the assumed spatial signal model.")
+    st.write("Not yet implemented: calibrated probabilities, time-dependent transport, or production biosensing.")
+    st.write("Next: validate more random seeds and scenario settings, review failure cases, and incorporate results into the final report.")
