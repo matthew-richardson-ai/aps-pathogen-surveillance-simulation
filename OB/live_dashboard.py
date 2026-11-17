@@ -354,5 +354,6 @@ with about:
     st.subheader("What this demonstrator actually does")
     st.write("The facility, source selection, exponential graph-distance decay, noisy or missing readings, and baseline all come directly from APS core modules. Each display is a single spatial snapshot, not time-dependent propagation.")
     st.write("Implemented: interactive graph, simulated conditions, source reveal, manual follow-up sample, deterministic seeds, baseline metrics and trial CSV export.")
-    st.write("Optional: Logistic Regression and Random Forest predictions are now available after training on Justin\'s split synthetic dataset. Uncalibrated class probabilities do not establish predictive reliability.")\n    st.write("Not yet implemented: calibrated confidence, AI-selected adaptive sampling, time-dependent transport, or production biosensing.")
-    st.write("Next: connect Jimmy's trained models and Justin's shared dataset, implement information-based sampling, and feed matched predictions into Owen's model evaluation plots.")
+    st.write("Optional: Logistic Regression and Random Forest predictions are available after training on Justin's saved synthetic dataset. These class probabilities are not calibrated confidence estimates.")
+    st.write("Not yet implemented: calibrated confidence, AI-selected adaptive sampling, time-dependent transport, or production biosensing.")
+    st.write("Next: implement an information-based single-sample policy and evaluate it against random sampling using matched trials.")
