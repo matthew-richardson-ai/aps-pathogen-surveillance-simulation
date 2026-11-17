@@ -18,8 +18,13 @@ if str(ROOT) not in sys.path:
 
 from Simulation.facility import build_facility
 from live_engine import Scenario, simulate, sample_one_more, predict_baseline, baseline_error, batch_baseline
+from Localization.ml_pipeline import train_models, predict_models
 
 st.set_page_config(page_title="APS | Simulation Lab", page_icon="🧬", layout="wide")
+
+@st.cache_resource(show_spinner="Training APS models on Justin's synthetic dataset...")
+def load_ml_artifacts():
+    return train_models()
 BG, PANEL, MUTED, CYAN, GREEN, PURPLE = "#0b1220", "#111e30", "#b7cada", "#48d4de", "#66e4ad", "#a994ff"
 
 st.markdown("""
@@ -173,7 +178,7 @@ st.markdown('<div class="aps-tag">ARTIFICIAL INTELLIGENCE / INTERACTIVE SIMULATI
 st.title("Adaptive Pathogen Surveillance")
 st.caption("Scenario Lab | Explore how incomplete, noisy sensor data changes source localization.")
 
-live, batch_tab, about = st.tabs(["Live facility", "Experiment lab", "Methods & next steps"])
+live, models_tab, batch_tab, about = st.tabs(["Live facility", "Model comparison", "Experiment lab", "Methods & next steps"])
 
 with live:
     st.markdown('<div class="aps-notice">This dashboard runs the existing APS simulation. The green ring represents the strongest-sensor baseline, not a trained ML prediction. A single extra measurement can be requested manually.</div>', unsafe_allow_html=True)
@@ -184,6 +189,15 @@ with live:
     metrics[1].metric("Baseline predicts", prediction or "No reading")
     metrics[2].metric("Sensor noise", f"{params.noise_std:.2f}")
     metrics[3].metric("Missing probability", f"{params.missing_rate:.0%}")
+    if st.session_state.get("ml_enabled", False):
+        try:
+            live_ml_predictions = predict_models(load_ml_artifacts(), snap.readings)
+            ml_cols = st.columns(2)
+            for column, (_, result) in zip(ml_cols, live_ml_predictions.iterrows()):
+                zone = result["predicted_source"]
+                column.metric(result["model"], zone if pd.notna(zone) else "No reading")
+        except (FileNotFoundError, ValueError) as exc:
+            st.error(f"ML model integration: {exc}")
     l, r = st.columns([1.75, 1], gap="large")
     with l:
         st.subheader("Eight-zone facility")
@@ -223,6 +237,86 @@ with live:
         st.dataframe(table, hide_index=True, use_container_width=True)
         st.download_button("Download CSV", table.to_csv(index=False).encode(), file_name="aps_sensor_readings.csv", mime="text/csv")
 
+with models_tab:
+    st.subheader("Machine-learning source localization")
+    st.write("Train Logistic Regression and Random Forest using the existing dataset in Team/Justin/Data. Models use only initial sensor readings and missingness flags.")
+    if st.button("Train models and evaluate held-out test data", type="primary"):
+        st.session_state.ml_enabled = True
+    if not st.session_state.get("ml_enabled", False):
+        st.info("Train the models to compare them against the strongest-sensor baseline.")
+    else:
+        try:
+            trained = load_ml_artifacts()
+            st.caption(
+                f"Dataset: {Path(trained.source_path).name} | "
+                f"Training: {trained.train_count:,} scenarios | "
+                f"Held-out test: {trained.test_count:,} scenarios"
+            )
+            scores = trained.scores.copy()
+            shown_scores = scores.copy()
+            shown_scores["accuracy"] = shown_scores["accuracy"].map(lambda x: f"{x:.1%}")
+            shown_scores["mean_graph_error"] = shown_scores["mean_graph_error"].map(
+                lambda x: "N/A" if pd.isna(x) else f"{x:.3f}"
+            )
+            shown_scores.columns = ["Model", "Exact accuracy", "Mean graph error (edges)", "Test scenarios"]
+            st.dataframe(shown_scores, hide_index=True, use_container_width=True)
+            fig = go.Figure(go.Bar(
+                x=scores["model"],
+                y=scores["accuracy"] * 100,
+                marker_color=[CYAN, GREEN, PURPLE],
+                text=[f"{v:.1%}" for v in scores["accuracy"]],
+                textposition="outside",
+            ))
+            fig.update_layout(
+                title="Held-out exact-source accuracy",
+                yaxis=dict(title="Accuracy (%)", range=[0, 105], gridcolor="#26384f"),
+                paper_bgcolor=PANEL, plot_bgcolor=PANEL, font=dict(color=MUTED),
+                height=340, showlegend=False,
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            st.subheader("Predictions on the current live scenario")
+            current_predictions = predict_models(trained, snap.readings)
+            initial_predictions = predict_models(trained, simulate(params).readings)
+            display_predictions = current_predictions.copy()
+            display_predictions["max_class_probability"] = display_predictions["max_class_probability"].map(
+                lambda p: "N/A" if pd.isna(p) else f"{p:.1%}"
+            )
+            display_predictions.columns = ["Model", "Predicted source", "Largest class probability (uncalibrated)"]
+            st.dataframe(display_predictions, hide_index=True, use_container_width=True)
+            if snap.requested_zone is not None:
+                before_after = initial_predictions[["model", "predicted_source"]].merge(
+                    current_predictions[["model", "predicted_source"]],
+                    on="model", suffixes=("_before", "_after")
+                )
+                before_after.columns = ["Model", "Before manual sample", "After manual sample"]
+                st.caption(f"Comparison after the manual sample at {snap.requested_zone}")
+                st.dataframe(before_after, hide_index=True, use_container_width=True)
+            by_condition = trained.test_predictions.groupby(
+                ["scenario_type", "model"]
+            )["correct"].mean().reset_index()
+            condition_fig = go.Figure()
+            for model_name, data in by_condition.groupby("model", sort=False):
+                condition_fig.add_trace(go.Bar(
+                    name=model_name,
+                    x=data["scenario_type"],
+                    y=data["correct"] * 100,
+                ))
+            condition_fig.update_layout(
+                title="Held-out accuracy by synthetic condition",
+                barmode="group", yaxis=dict(range=[0, 105], title="Accuracy (%)", gridcolor="#26384f"),
+                paper_bgcolor=PANEL, plot_bgcolor=PANEL, font=dict(color=MUTED),
+                height=420,
+            )
+            st.plotly_chart(condition_fig, use_container_width=True)
+            st.download_button(
+                "Download held-out prediction records",
+                trained.test_predictions.to_csv(index=False).encode("utf-8"),
+                file_name="aps_holdout_model_predictions.csv", mime="text/csv"
+            )
+            st.caption("The current scenario is a simulated demonstration. Test-set metrics use Justin's saved split. Class probabilities are not calibrated confidence estimates. No AI-based sampling policy has been implemented.")
+        except (FileNotFoundError, ValueError) as exc:
+            st.error(f"Unable to train or evaluate models: {exc}")
+
 with batch_tab:
     st.subheader("Baseline-only repeated experiments")
     st.write("Run independent seeded simulations at the current settings, with a randomized hidden source each time. These are genuine synthetic APS results, not estimates of ML-model accuracy.")
@@ -260,5 +354,5 @@ with about:
     st.subheader("What this demonstrator actually does")
     st.write("The facility, source selection, exponential graph-distance decay, noisy or missing readings, and baseline all come directly from APS core modules. Each display is a single spatial snapshot, not time-dependent propagation.")
     st.write("Implemented: interactive graph, simulated conditions, source reveal, manual follow-up sample, deterministic seeds, baseline metrics and trial CSV export.")
-    st.write("Not yet implemented: ML predictions in this dashboard, calibrated confidence, AI-selected adaptive sampling, time-dependent transport, or production biosensing.")
+    st.write("Optional: Logistic Regression and Random Forest predictions are now available after training on Justin\'s split synthetic dataset. Uncalibrated class probabilities do not establish predictive reliability.")\n    st.write("Not yet implemented: calibrated confidence, AI-selected adaptive sampling, time-dependent transport, or production biosensing.")
     st.write("Next: connect Jimmy's trained models and Justin's shared dataset, implement information-based sampling, and feed matched predictions into Owen's model evaluation plots.")
