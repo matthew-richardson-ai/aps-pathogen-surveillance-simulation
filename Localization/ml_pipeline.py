@@ -39,11 +39,21 @@ class ModelArtifacts:
 
 
 def default_dataset_path() -> Path:
+    """Locate Justin's data in either the current or legacy branch layout."""
     root = Path(__file__).resolve().parents[1]
-    candidates = sorted((root / "Team" / "Justin" / "Data").glob("outbreak_dataset_*.csv"))
-    if not candidates:
-        raise FileNotFoundError("No Justin CSV found in Team/Justin/Data")
-    return candidates[-1]
+    directories = (
+        root / "Team" / "Justin" / "Data",
+        root / "Justin" / "Data",
+    )
+    for directory in directories:
+        candidates = sorted(directory.glob("outbreak_dataset_*.csv"))
+        if candidates:
+            return candidates[-1]
+    locations = ", ".join(str(path.relative_to(root)) for path in directories)
+    raise FileNotFoundError(
+        f"No APS training dataset found. Checked {locations}. "
+        "The repository's Justin dataset must be present before training."
+    )
 
 
 def reading_features(readings: Mapping[str, float | None]) -> pd.DataFrame:
