@@ -1,0 +1,11 @@
+# APS Streamlit theme, loaded from the repository root.
+# Set the native Streamlit widgets to dark mode instead of styling
+# only the background (which caused low-contrast labels and red accents).
+
+[theme]
+base = "dark"
+primaryColor = "#35D5CB"
+backgroundColor = "#0B1220"
+secondaryBackgroundColor = "#172438"
+textColor = "#F0F5FC"
+font = "sans serif"

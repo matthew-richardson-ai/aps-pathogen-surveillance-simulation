@@ -19,23 +19,67 @@ if str(ROOT) not in sys.path:
 from Simulation.facility import build_facility
 from live_engine import Scenario, simulate, sample_one_more, predict_baseline, baseline_error, batch_baseline
 from Localization.ml_pipeline import train_models, predict_models
+from Adaptive.sampler import source_prior, choose_next_zone
+from OB.adaptive_experiments import compare_sampling_policies, summarize_comparison
 
 st.set_page_config(page_title="APS | Simulation Lab", page_icon="🧬", layout="wide")
 
 @st.cache_resource(show_spinner="Training APS models on Justin's synthetic dataset...")
 def load_ml_artifacts():
     return train_models()
-BG, PANEL, MUTED, CYAN, GREEN, PURPLE = "#0b1220", "#111e30", "#b7cada", "#48d4de", "#66e4ad", "#a994ff"
+BG, PANEL, MUTED, CYAN, GREEN, PURPLE = "#0B1220", "#142238", "#DEE8F6", "#40DCD0", "#65E6BA", "#BBA7FF"
+
+def zone_label(zone):
+    """Use readable UI names without modifying canonical simulation IDs."""
+    if zone is None or bool(pd.isna(zone)):
+        return "No Reading"
+    value = str(zone)
+    if value.startswith("zone_") and value[5:].isdigit():
+        return f"Zone {int(value[5:])}"
+    return value.replace("_", " ").title()
+
+def condition_label(value):
+    return str(value).replace("_", " ").title()
+
+def display_zone_columns(frame, names):
+    display = frame.copy()
+    for field in names:
+        if field in display.columns:
+            display[field] = display[field].map(zone_label)
+    return display
 
 st.markdown("""
 <style>
-.stApp {background: #0b1220; color: #edf4ff;}
-[data-testid="stSidebar"] {background: #101b2b;}
-[data-testid="stMetric"] {background: #15243a; border: 1px solid #263b53; border-radius: 12px; padding: 14px;}
-.block-container {max-width: 1550px; padding-top: 1.25rem;}
-.aps-tag {color:#48d4de;font-size:.77rem;font-weight:700;letter-spacing:.14em;}
-.aps-notice {background:#152238;border:1px solid #293e55;border-left:3px solid #48d4de;
- border-radius:9px;padding:12px 14px;color:#c9d9e9;}
+/* The native theme is set in .streamlit/config.toml; styles here
+   augment it without replacing native widget colors. */
+html { color-scheme: dark; }
+.stApp, [data-testid="stAppViewContainer"] { background: #0B1220; color: #F0F5FC; }
+[data-testid="stHeader"] { background: #0B1220; }
+[data-testid="stSidebar"] { background: #121F33; border-right: 1px solid #32445D; }
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] label,
+[data-testid="stWidgetLabel"] p { color: #E6EFFC !important; }
+.stApp h1, .stApp h2, .stApp h3 { color: #F6F9FF; }
+.stApp [data-testid="stCaptionContainer"] p { color: #B9CADD !important; }
+[data-testid="stMetric"] { background: #17263D; border: 1px solid #324763;
+  border-radius: 12px; padding: 14px; }
+[data-testid="stMetricLabel"] p { color: #C5D6E9 !important; }
+[data-testid="stMetricValue"] { color: #F1F7FF !important; }
+[data-testid="stTabs"] button p { color: #BCCDE3 !important; }
+[data-testid="stTabs"] button[aria-selected="true"] p { color: #65E5D9 !important; }
+[data-testid="stTabs"] button[aria-selected="true"] { border-color: #40DCD0 !important; }
+.stApp button[kind="primary"] { background-color: #36D5C9 !important;
+  border-color: #36D5C9 !important; color: #0B1A28 !important; font-weight: 600; }
+.stApp button[kind="primary"]:hover { background-color: #77ECE1 !important;
+  border-color: #77ECE1 !important; color: #0B1A28 !important; }
+.block-container { max-width: 1550px; padding-top: 1.35rem; }
+.aps-tag { color: #65E5D9; font-size: .78rem; font-weight: 700; letter-spacing: .1em; }
+.aps-notice { background: #192B42; border: 1px solid #38516B;
+ border-left: 3px solid #40DCD0; border-radius: 9px; padding: 12px 14px;
+ color: #E4EFF9; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -55,10 +99,11 @@ def apply_preset():
         st.session_state[key] = value
 
 with st.sidebar:
-    st.markdown('<div class="aps-tag">APS / SCENARIO CONTROLS</div>', unsafe_allow_html=True)
+    st.markdown('<div class="aps-tag">APS / SIMULATION CONTROLS</div>', unsafe_allow_html=True)
     st.header("Simulation settings")
     st.selectbox("Scenario preset", list(PRESETS), key="preset", on_change=apply_preset)
-    st.selectbox("Hidden source", ["Random"] + sorted(build_facility().nodes), key="source")
+    st.selectbox("Hidden source", ["Random"] + sorted(build_facility().nodes),
+                 key="source", format_func=lambda zone: "Random Source" if zone == "Random" else zone_label(zone))
     st.number_input("Random seed", min_value=0, max_value=2_000_000_000, step=1, key="seed")
     st.slider("Initially sampled zones", 2, 7, step=1, key="initial_sensors")
     st.slider("Sensor noise (standard deviation)", 0.0, 0.40, step=0.01, key="noise_std")
@@ -87,6 +132,8 @@ if st.session_state.get("active_params") != params:
     st.session_state.reveal_truth = False
     st.session_state.pop("manual_zone", None)
     st.session_state.pop("batch_results", None)
+    st.session_state.pop("adaptive_results", None)
+    st.session_state.pop("auto_sample_details", None)
 snap = st.session_state.active_snapshot
 
 # Stable layout of the canonical facility topology, not Owen's example graph.
@@ -109,20 +156,20 @@ def facility_plot(snapshot, reveal):
     for zones, available in [(present, True), (missing, False)]:
         if not zones:
             continue
-        marker = dict(size=60, line=dict(color="#0b1220", width=2))
+        marker = dict(size=77, line=dict(color="#0B1220", width=2))
         if available:
             marker.update(color=[snapshot.readings[z] for z in zones],
-                          colorscale=[[0, "#bbf4f4"], [.5, "#47d3dd"], [1, "#fc8663"]],
+                          colorscale=[[0, "#D9EFF9"], [.5, "#52DACC"], [1, "#F9CE83"]],
                           cmin=0, cmax=1, showscale=True,
                           colorbar=dict(title="Signal", thickness=12, len=.55, x=1.02))
         else:
-            marker.update(color="#2a3b50", line=dict(color="#778ba0", width=2))
+            marker.update(color="#33465C", line=dict(color="#A7BBCE", width=2))
         fig.add_trace(go.Scatter(
             x=[POS[z][0] for z in zones], y=[POS[z][1] for z in zones],
-            mode="markers+text", text=[z.replace("zone_", "Z") for z in zones],
-            textposition="middle center", textfont=dict(size=15, color="#061422" if available else "#e3ecf7"),
+            mode="markers+text", text=[zone_label(z) for z in zones],
+            textposition="middle center", textfont=dict(size=12, color="#071624" if available else "#F0F6FF"),
             marker=marker, name="Measured" if available else "Unavailable",
-            customdata=[[z, f"{snapshot.readings[z]:.3f}" if available else "not observed"] for z in zones],
+            customdata=[[zone_label(z), f"{snapshot.readings[z]:.3f}" if available else "Not Observed"] for z in zones],
             hovertemplate="%{customdata[0]}: %{customdata[1]}<extra></extra>",
         ))
     prediction = predict_baseline(snapshot.readings)
@@ -131,21 +178,21 @@ def facility_plot(snapshot, reveal):
         fig.add_trace(go.Scatter(
             x=[x], y=[y], mode="markers", name="Baseline prediction",
             marker=dict(symbol="circle-open", size=78, line=dict(color=GREEN, width=6)),
-            hovertemplate=f"Baseline prediction: {prediction}<extra></extra>",
+            hovertemplate=f"Baseline prediction: {zone_label(prediction)}<extra></extra>",
         ))
     if snapshot.requested_zone:
         x, y = POS[snapshot.requested_zone]
         fig.add_trace(go.Scatter(
-            x=[x], y=[y], mode="markers", name="Manual extra sample",
+            x=[x], y=[y], mode="markers", name="Additional measurement",
             marker=dict(symbol="circle-open", size=89, line=dict(color=PURPLE, width=3)),
-            hovertemplate=f"Extra sample: {snapshot.requested_zone}<extra></extra>",
+            hovertemplate=f"Extra sample: {zone_label(snapshot.requested_zone)}<extra></extra>",
         ))
     if reveal:
         x, y = POS[snapshot.true_source]
         fig.add_trace(go.Scatter(
             x=[x+.27], y=[y+.37], mode="markers", name="True source",
             marker=dict(symbol="star", size=22, color="#fff493"),
-            hovertemplate=f"True source: {snapshot.true_source}<extra></extra>",
+            hovertemplate=f"True source: {zone_label(snapshot.true_source)}<extra></extra>",
         ))
     fig.update_layout(
         paper_bgcolor=PANEL, plot_bgcolor=PANEL, font=dict(color=MUTED), height=490,
@@ -161,7 +208,7 @@ def reading_plot(snapshot):
     zones = sorted(snapshot.readings)
     values = [snapshot.readings[z] for z in zones]
     fig = go.Figure(go.Bar(
-        x=[z.replace("zone_", "Z") for z in zones],
+        x=[zone_label(z) for z in zones],
         y=[v if v is not None else 0 for v in values],
         marker_color=[CYAN if v is not None else "#34465e" for v in values],
         customdata=["unavailable" if v is None else f"{v:.3f}" for v in values],
@@ -178,7 +225,7 @@ st.markdown('<div class="aps-tag">ARTIFICIAL INTELLIGENCE / INTERACTIVE SIMULATI
 st.title("Adaptive Pathogen Surveillance")
 st.caption("Scenario Lab | Explore how incomplete, noisy sensor data changes source localization.")
 
-live, models_tab, batch_tab, about = st.tabs(["Live facility", "Model comparison", "Experiment lab", "Methods & next steps"])
+live, models_tab, adaptive_tab, batch_tab, about = st.tabs(["Live facility", "Model comparison", "Adaptive sampling", "Experiment lab", "Methods & next steps"])
 
 with live:
     st.markdown('<div class="aps-notice">This dashboard runs the existing APS simulation. The green ring represents the strongest-sensor baseline, not a trained ML prediction. A single extra measurement can be requested manually.</div>', unsafe_allow_html=True)
@@ -186,7 +233,7 @@ with live:
     prediction = predict_baseline(snap.readings)
     metrics = st.columns(4)
     metrics[0].metric("Available readings", f"{sum(x is not None for x in snap.readings.values())}/8")
-    metrics[1].metric("Baseline predicts", prediction or "No reading")
+    metrics[1].metric("Baseline predicts", zone_label(prediction))
     metrics[2].metric("Sensor noise", f"{params.noise_std:.2f}")
     metrics[3].metric("Missing probability", f"{params.missing_rate:.0%}")
     if st.session_state.get("ml_enabled", False):
@@ -195,51 +242,87 @@ with live:
             ml_cols = st.columns(2)
             for column, (_, result) in zip(ml_cols, live_ml_predictions.iterrows()):
                 zone = result["predicted_source"]
-                column.metric(result["model"], zone if pd.notna(zone) else "No reading")
+                column.metric(result["model"], zone_label(zone))
         except (FileNotFoundError, ValueError) as exc:
             st.error(f"ML model integration: {exc}")
     l, r = st.columns([1.75, 1], gap="large")
     with l:
-        st.subheader("Eight-zone facility")
+        st.subheader("Eight-Zone Facility")
         st.toggle("Reveal hidden source", key="reveal_truth")
         st.plotly_chart(facility_plot(snap, st.session_state.reveal_truth), use_container_width=True,
                         config={"displaylogo": False, "scrollZoom": True})
         st.caption("Hover or zoom to inspect nodes. Edges are graph connections, not airflow paths or physical distances.")
     with r:
-        st.subheader("Sensor readings")
+        st.subheader("Sensor Readings")
         st.plotly_chart(reading_plot(snap), use_container_width=True,
                         config={"displaylogo": False})
-        st.subheader("One additional measurement")
-        st.caption("Choose an unavailable zone. This manual step demonstrates updated evidence; it is not the AI adaptive policy.")
+        st.subheader("One Additional Measurement")
+        st.caption("Compare a manual additional sample with model-assisted sampling that selects a currently unobserved zone.")
         candidates = sorted([z for z, value in snap.readings.items() if value is None])
         if snap.requested_zone is None and candidates:
-            target = st.selectbox("Sample location", candidates, key="manual_zone")
-            if st.button("Request manual sample", type="primary", use_container_width=True):
+            target = st.selectbox("Sample location", candidates, key="manual_zone", format_func=zone_label)
+            if st.button("Request manual sample", use_container_width=True):
+                st.session_state.pop("auto_sample_details", None)
                 st.session_state.active_snapshot = sample_one_more(snap, target)
                 st.rerun()
+            selector_model = st.selectbox(
+                "Information-gain selector", ["Logistic Regression", "Random Forest"],
+                key="adaptive_selector_model",
+            )
+            if st.button("AI selects next zone", type="primary", use_container_width=True):
+                try:
+                    trained = load_ml_artifacts()
+                    prior = source_prior(trained.models[selector_model], snap.readings)
+                    choice = choose_next_zone(
+                        build_facility(), snap.readings, prior,
+                        source_intensity=params.source_intensity,
+                        decay_rate=params.decay_rate,
+                    )
+                    if choice is not None:
+                        st.session_state.active_snapshot = sample_one_more(snap, choice.zone)
+                        st.session_state.auto_sample_details = {
+                            "model": selector_model,
+                            "zone": choice.zone,
+                            "gain": choice.expected_gain_bits,
+                        }
+                        st.session_state.ml_enabled = True
+                        st.rerun()
+                except (FileNotFoundError, ValueError) as error:
+                    st.error(f"Adaptive selection failed: {error}")
         elif snap.requested_zone:
-            st.success(f"New reading at {snap.requested_zone}: {snap.requested_reading:.3f}")
+            st.success(f"New reading at {zone_label(snap.requested_zone)}: {snap.requested_reading:.3f}")
+            selected = st.session_state.get("auto_sample_details")
+            if selected:
+                st.caption(
+                    f"{selected['model']} selected {zone_label(selected['zone'])} "
+                    f"(estimated information gain: {selected['gain']:.3f} bits)."
+                )
             if st.button("Reset sampling", use_container_width=True):
                 st.session_state.active_snapshot = simulate(params)
+                st.session_state.pop("auto_sample_details", None)
                 st.rerun()
         else:
             st.info("No unavailable zone remains to sample.")
         if st.session_state.reveal_truth:
             before, after = baseline_error(snap, after_sample=False), baseline_error(snap)
-            st.write(f"True source: {snap.true_source}")
-            st.write(f"Initial baseline: {snap.initial_prediction or 'None'} | error: {before if before is not None else 'N/A'}")
-            st.write(f"Current baseline: {prediction or 'None'} | error: {after if after is not None else 'N/A'}")
+            st.write(f"True source: {zone_label(snap.true_source)}")
+            st.write(f"Initial baseline: {zone_label(snap.initial_prediction)} | error: {before if before is not None else 'N/A'}")
+            st.write(f"Current baseline: {zone_label(prediction)} | error: {after if after is not None else 'N/A'}")
     table = pd.DataFrame([
         {"zone": z, "initially_selected": z in snap.initially_selected, "reading": snap.readings[z]}
         for z in sorted(snap.readings)
     ])
     with st.expander("View and export current sensor data"):
-        st.dataframe(table, hide_index=True, use_container_width=True)
+        shown_readings = table.rename(columns={
+            "zone": "Zone", "initially_selected": "Initially Selected", "reading": "Signal Reading"
+        })
+        shown_readings["Zone"] = shown_readings["Zone"].map(zone_label)
+        st.dataframe(shown_readings, hide_index=True, use_container_width=True)
         st.download_button("Download CSV", table.to_csv(index=False).encode(), file_name="aps_sensor_readings.csv", mime="text/csv")
 
 with models_tab:
-    st.subheader("Machine-learning source localization")
-    st.write("Train Logistic Regression and Random Forest using the existing dataset in Team/Justin/Data. Models use only initial sensor readings and missingness flags.")
+    st.subheader("Machine-Learning Source Localization")
+    st.write("Train Logistic Regression and Random Forest using Justin\'s saved synthetic dataset. Only initial sensor readings and missingness indicators are used as model inputs.")
     if st.button("Train models and evaluate held-out test data", type="primary"):
         st.session_state.ml_enabled = True
     if not st.session_state.get("ml_enabled", False):
@@ -274,22 +357,24 @@ with models_tab:
                 height=340, showlegend=False,
             )
             st.plotly_chart(fig, use_container_width=True)
-            st.subheader("Predictions on the current live scenario")
+            st.subheader("Predictions on the Current Scenario")
             current_predictions = predict_models(trained, snap.readings)
             initial_predictions = predict_models(trained, simulate(params).readings)
             display_predictions = current_predictions.copy()
             display_predictions["max_class_probability"] = display_predictions["max_class_probability"].map(
                 lambda p: "N/A" if pd.isna(p) else f"{p:.1%}"
             )
-            display_predictions.columns = ["Model", "Predicted source", "Largest class probability (uncalibrated)"]
+            display_predictions.columns = ["Model", "Predicted Source", "Largest Class Probability (Uncalibrated)"]
+            display_predictions["Predicted Source"] = display_predictions["Predicted Source"].map(zone_label)
             st.dataframe(display_predictions, hide_index=True, use_container_width=True)
             if snap.requested_zone is not None:
                 before_after = initial_predictions[["model", "predicted_source"]].merge(
                     current_predictions[["model", "predicted_source"]],
                     on="model", suffixes=("_before", "_after")
                 )
-                before_after.columns = ["Model", "Before manual sample", "After manual sample"]
-                st.caption(f"Comparison after the manual sample at {snap.requested_zone}")
+                before_after.columns = ["Model", "Before Manual Sample", "After Manual Sample"]
+                before_after = display_zone_columns(before_after, ["Before Manual Sample", "After Manual Sample"])
+                st.caption(f"Comparison after the manual sample at {zone_label(snap.requested_zone)}")
                 st.dataframe(before_after, hide_index=True, use_container_width=True)
             by_condition = trained.test_predictions.groupby(
                 ["scenario_type", "model"]
@@ -298,7 +383,7 @@ with models_tab:
             for model_name, data in by_condition.groupby("model", sort=False):
                 condition_fig.add_trace(go.Bar(
                     name=model_name,
-                    x=data["scenario_type"],
+                    x=data["scenario_type"].map(condition_label),
                     y=data["correct"] * 100,
                 ))
             condition_fig.update_layout(
@@ -316,6 +401,114 @@ with models_tab:
             st.caption("The current scenario is a simulated demonstration. Test-set metrics use Justin's saved split. Class probabilities are not calibrated confidence estimates. No AI-based sampling policy has been implemented.")
         except (FileNotFoundError, ValueError) as exc:
             st.error(f"Unable to train or evaluate models: {exc}")
+
+with adaptive_tab:
+    st.subheader("Does Intelligent Sensor Selection Actually Help?")
+    st.write(
+        "Compare no additional measurement, one random measurement, and "
+        "one model-selected measurement on exactly the same seeded scenarios. "
+        "Both sampling strategies are allowed one extra measurement."
+    )
+    c_trials, c_method = st.columns([1, 2])
+    with c_trials:
+        experiment_trials = st.slider(
+            "Matched simulated events", min_value=20, max_value=200,
+            value=60, step=20, key="adaptive_trial_count",
+        )
+    with c_method:
+        selected_models = st.multiselect(
+            "Models to evaluate",
+            ["Logistic Regression", "Random Forest"],
+            default=["Logistic Regression", "Random Forest"],
+            key="adaptive_evaluation_models",
+        )
+    if st.button("Run matched sampling experiment", type="primary"):
+        if not selected_models:
+            st.error("Select at least one model.")
+        else:
+            try:
+                st.session_state.adaptive_results = compare_sampling_policies(
+                    load_ml_artifacts(), params,
+                    trials=experiment_trials,
+                    model_names=tuple(selected_models),
+                )
+            except (FileNotFoundError, ValueError) as error:
+                st.error(f"Adaptive experiment failed: {error}")
+    matched = st.session_state.get("adaptive_results")
+    if matched is None:
+        st.info("Run the experiment to generate paired comparisons and accuracy charts.")
+    else:
+        summary = summarize_comparison(matched)
+        results_view = summary.copy()
+        results_view["accuracy"] = results_view["accuracy"].map(lambda a: f"{a:.1%}")
+        results_view["mean_graph_error"] = results_view["mean_graph_error"].map(
+            lambda x: "N/A" if pd.isna(x) else f"{x:.3f}"
+        )
+        results_view["additional_samples"] = results_view["additional_samples"].map(
+            lambda x: f"{x:.1f}"
+        )
+        results_view.columns = [
+            "Model", "Sampling strategy", "Trials", "Exact-source accuracy",
+            "Mean graph error (edges)", "Extra samples per run",
+        ]
+        st.dataframe(results_view, hide_index=True, use_container_width=True)
+        fig = go.Figure()
+        label_map = {
+            "static": "No additional sample",
+            "random": "Random selection",
+            "information_gain": "Expected information gain",
+        }
+        for name, group in summary.groupby("model", sort=False):
+            fig.add_trace(go.Bar(
+                name=name,
+                x=[label_map[x] for x in group["strategy"]],
+                y=group["accuracy"] * 100,
+                text=[f"{a:.1%}" for a in group["accuracy"]],
+                textposition="outside",
+            ))
+        fig.update_layout(
+            barmode="group", title="Accuracy on matched simulated events",
+            yaxis=dict(title="Exact-source accuracy (%)", range=[0, 105],
+                       gridcolor="#27394e"),
+            paper_bgcolor=PANEL, plot_bgcolor=PANEL,
+            font=dict(color=MUTED), height=390,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        for name, group in summary.groupby("model", sort=False):
+            rates = dict(zip(group["strategy"], group["accuracy"]))
+            st.caption(
+                f"{name}: information gain vs. random = "
+                f"{100 * (rates['information_gain'] - rates['random']):+.1f} "
+                f"percentage points. A negative value means random sampling did better."
+            )
+        st.download_button(
+            "Download paired experiment CSV",
+            matched.to_csv(index=False).encode("utf-8"),
+            file_name="aps_sampling_policy_comparison.csv", mime="text/csv",
+        )
+        with st.expander("Inspect all paired predictions"):
+            display_matched = matched.rename(columns={
+                "run_id": "Trial", "seed": "Seed", "model": "Model", "strategy": "Sampling Strategy",
+                "true_source": "True Source", "predicted_source": "Predicted Source",
+                "correct": "Correct", "graph_distance": "Graph Error",
+                "sampled_zone": "Sampled Zone", "extra_samples": "Additional Samples",
+                "expected_gain_bits": "Expected Gain (bits)", "noise_std": "Noise SD",
+                "missing_rate": "Missing Probability", "initial_sensors": "Initial Sensors",
+                "source_intensity": "Source Intensity", "decay_rate": "Distance Decay",
+            })
+            display_matched = display_zone_columns(
+                display_matched, ["True Source", "Predicted Source", "Sampled Zone"]
+            )
+            display_matched["Sampling Strategy"] = display_matched["Sampling Strategy"].map(condition_label)
+            st.dataframe(display_matched, hide_index=True, use_container_width=True)
+    st.caption(
+        "This is a controlled spatial snapshot simulation. Source truth is used "
+        "only for scoring. The information-gain policy uses model probabilities "
+        "that are not calibrated and assumes the simulator's graph-distance "
+        "signal model and sampling noise are known. It is not guaranteed to "
+        "outperform random sampling."
+    )
+
 
 with batch_tab:
     st.subheader("Baseline-only repeated experiments")
@@ -336,7 +529,7 @@ with batch_tab:
         c3.metric("No-reading trials", f"{missing}/{len(results)}")
         summary = results.groupby("true_source").agg(accuracy=("correct", "mean"), trials=("correct", "size")).reset_index()
         fig = go.Figure(go.Bar(
-            x=summary["true_source"], y=summary["accuracy"] * 100, marker_color=CYAN,
+            x=summary["true_source"].map(zone_label), y=summary["accuracy"] * 100, marker_color=CYAN,
             customdata=summary["trials"],
             hovertemplate="%{x}: %{y:.1f}% (n=%{customdata})<extra></extra>",
         ))
@@ -348,12 +541,22 @@ with batch_tab:
         st.download_button("Download trial records", results.to_csv(index=False).encode(),
                            file_name="aps_baseline_trials.csv", mime="text/csv")
         with st.expander("Inspect trial records"):
-            st.dataframe(results, use_container_width=True, hide_index=True)
+            shown_baseline = results.rename(columns={
+                "run_id": "Trial", "seed": "Seed", "true_source": "True Source",
+                "predicted_source": "Predicted Source", "correct": "Correct",
+                "graph_distance": "Graph Error", "observed_count": "Available Readings",
+                "initial_sensors": "Initially Sampled", "noise_std": "Noise SD",
+                "missing_rate": "Missing Probability",
+                "source_intensity": "Source Intensity", "decay_rate": "Distance Decay",
+            })
+            shown_baseline = display_zone_columns(shown_baseline, ["True Source", "Predicted Source"])
+            st.dataframe(shown_baseline, use_container_width=True, hide_index=True)
 
 with about:
     st.subheader("What this demonstrator actually does")
     st.write("The facility, source selection, exponential graph-distance decay, noisy or missing readings, and baseline all come directly from APS core modules. Each display is a single spatial snapshot, not time-dependent propagation.")
     st.write("Implemented: interactive graph, simulated conditions, source reveal, manual follow-up sample, deterministic seeds, baseline metrics and trial CSV export.")
     st.write("Optional: Logistic Regression and Random Forest predictions are available after training on Justin's saved synthetic dataset. These class probabilities are not calibrated confidence estimates.")
-    st.write("Not yet implemented: calibrated confidence, AI-selected adaptive sampling, time-dependent transport, or production biosensing.")
-    st.write("Next: implement an information-based single-sample policy and evaluate it against random sampling using matched trials.")
+    st.write("Implemented experimentally: expected-information-gain zone selection and paired comparison against random additional sampling. The selector uses uncalibrated model probabilities and the assumed spatial signal model.")
+    st.write("Not yet implemented: calibrated probabilities, time-dependent transport, or production biosensing.")
+    st.write("Next: validate more random seeds and scenario settings, review failure cases, and incorporate results into the final report.")
