@@ -183,7 +183,7 @@ def facility_plot(snapshot, reveal):
     if snapshot.requested_zone:
         x, y = POS[snapshot.requested_zone]
         fig.add_trace(go.Scatter(
-            x=[x], y=[y], mode="markers", name="Manual extra sample",
+            x=[x], y=[y], mode="markers", name="Additional measurement",
             marker=dict(symbol="circle-open", size=89, line=dict(color=PURPLE, width=3)),
             hovertemplate=f"Extra sample: {zone_label(snapshot.requested_zone)}<extra></extra>",
         ))
@@ -247,16 +247,16 @@ with live:
             st.error(f"ML model integration: {exc}")
     l, r = st.columns([1.75, 1], gap="large")
     with l:
-        st.subheader("Eight-zone facility")
+        st.subheader("Eight-Zone Facility")
         st.toggle("Reveal hidden source", key="reveal_truth")
         st.plotly_chart(facility_plot(snap, st.session_state.reveal_truth), use_container_width=True,
                         config={"displaylogo": False, "scrollZoom": True})
         st.caption("Hover or zoom to inspect nodes. Edges are graph connections, not airflow paths or physical distances.")
     with r:
-        st.subheader("Sensor readings")
+        st.subheader("Sensor Readings")
         st.plotly_chart(reading_plot(snap), use_container_width=True,
                         config={"displaylogo": False})
-        st.subheader("One additional measurement")
+        st.subheader("One Additional Measurement")
         st.caption("Compare a manual additional sample with model-assisted sampling that selects a currently unobserved zone.")
         candidates = sorted([z for z, value in snap.readings.items() if value is None])
         if snap.requested_zone is None and candidates:
@@ -321,8 +321,8 @@ with live:
         st.download_button("Download CSV", table.to_csv(index=False).encode(), file_name="aps_sensor_readings.csv", mime="text/csv")
 
 with models_tab:
-    st.subheader("Machine-learning source localization")
-    st.write("Train Logistic Regression and Random Forest using the existing dataset in Team/Justin/Data. Models use only initial sensor readings and missingness flags.")
+    st.subheader("Machine-Learning Source Localization")
+    st.write("Train Logistic Regression and Random Forest using Justin\'s saved synthetic dataset. Only initial sensor readings and missingness indicators are used as model inputs.")
     if st.button("Train models and evaluate held-out test data", type="primary"):
         st.session_state.ml_enabled = True
     if not st.session_state.get("ml_enabled", False):
@@ -357,7 +357,7 @@ with models_tab:
                 height=340, showlegend=False,
             )
             st.plotly_chart(fig, use_container_width=True)
-            st.subheader("Predictions on the current live scenario")
+            st.subheader("Predictions on the Current Scenario")
             current_predictions = predict_models(trained, snap.readings)
             initial_predictions = predict_models(trained, simulate(params).readings)
             display_predictions = current_predictions.copy()
@@ -403,7 +403,7 @@ with models_tab:
             st.error(f"Unable to train or evaluate models: {exc}")
 
 with adaptive_tab:
-    st.subheader("Does intelligent sensor selection actually help?")
+    st.subheader("Does Intelligent Sensor Selection Actually Help?")
     st.write(
         "Compare no additional measurement, one random measurement, and "
         "one model-selected measurement on exactly the same seeded scenarios. "
