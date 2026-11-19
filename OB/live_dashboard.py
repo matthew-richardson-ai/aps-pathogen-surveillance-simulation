@@ -374,7 +374,7 @@ with demo_tab:
             "A deterministic heuristic: predict the zone with the highest "
             "available sensor value. It does not use model training."
         )
-        st.markdown(r"$\\hat{s} = \\arg\\max_{i\\in O} r_i$")
+        st.markdown(r"$\hat{s} = \underset{i \in O}{\operatorname{arg\,max}}\; r_i$")
         st.caption("O = observed zones; rᵢ = the reading at zone i.")
 
     st.markdown("#### 2. Source Predictions")
@@ -923,7 +923,7 @@ with about:
         "**3. Random Forest:** A supervised ensemble of decision trees trained "
         "on the same inputs for a fair comparison."
     )
-    st.markdown(r"**Argmax prediction:** $\\hat{s} = \\arg\\max_{i\\in O} r_i$")
+    st.markdown(r"**Argmax prediction:** $\hat{s} = \underset{i \in O}{\operatorname{arg\,max}}\; r_i$")
     st.subheader("Experimental Method")
     st.markdown(
         "1. **Simulate:** Assign a hidden source to one of eight connected zones. "
