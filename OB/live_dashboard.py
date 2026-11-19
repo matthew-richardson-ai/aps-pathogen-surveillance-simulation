@@ -21,6 +21,7 @@ from live_engine import Scenario, simulate, sample_one_more, predict_baseline, b
 from Localization.ml_pipeline import train_models, predict_models
 from Adaptive.sampler import source_prior, choose_next_zone
 from OB.adaptive_experiments import compare_sampling_policies, summarize_comparison
+from facility_3d import facility_3d_plot
 
 st.set_page_config(page_title="APS | Simulation Lab", page_icon="🧬", layout="wide")
 
@@ -63,7 +64,19 @@ html { color-scheme: dark; }
 [data-testid="stSidebar"] label,
 [data-testid="stWidgetLabel"] p { color: #E6EFFC !important; }
 .stApp h1, .stApp h2, .stApp h3 { color: #F6F9FF; }
-.stApp [data-testid="stCaptionContainer"] p { color: #B9CADD !important; }
+.stApp [data-testid="stCaptionContainer"],
+.stApp [data-testid="stCaptionContainer"] *,
+.stApp [data-testid="stMarkdownContainer"] p,
+.stApp [data-testid="stMarkdownContainer"] li {
+  color: #EAF2FC !important;
+  opacity: 1 !important;
+}
+.stApp [data-testid="stCaptionContainer"] * { font-size: 0.96rem !important; line-height: 1.6 !important; }
+.stApp [data-testid="stWidgetLabel"] *,
+.stApp [data-testid="stSidebar"] [data-testid="stWidgetLabel"] * {
+  color: #F3F7FD !important;
+  opacity: 1 !important;
+}
 [data-testid="stMetric"] { background: #17263D; border: 1px solid #324763;
   border-radius: 12px; padding: 14px; }
 [data-testid="stMetricLabel"] p { color: #C5D6E9 !important; }
@@ -71,10 +84,37 @@ html { color-scheme: dark; }
 [data-testid="stTabs"] button p { color: #BCCDE3 !important; }
 [data-testid="stTabs"] button[aria-selected="true"] p { color: #65E5D9 !important; }
 [data-testid="stTabs"] button[aria-selected="true"] { border-color: #40DCD0 !important; }
-.stApp button[kind="primary"] { background-color: #36D5C9 !important;
-  border-color: #36D5C9 !important; color: #0B1A28 !important; font-weight: 600; }
-.stApp button[kind="primary"]:hover { background-color: #77ECE1 !important;
-  border-color: #77ECE1 !important; color: #0B1A28 !important; }
+.stApp button[kind="primary"],
+.stApp button[data-testid="stBaseButton-primary"] {
+  background: #40DDD0 !important;
+  border: 1px solid #76F3E6 !important;
+  color: #071C26 !important;
+  font-weight: 750 !important;
+}
+.stApp button[kind="primary"] *,
+.stApp button[data-testid="stBaseButton-primary"] * {
+  color: #071C26 !important;
+  opacity: 1 !important;
+  font-weight: 750 !important;
+}
+.stApp button[kind="primary"]:hover,
+.stApp button[data-testid="stBaseButton-primary"]:hover {
+  background: #88F3E8 !important;
+  border-color: #C7FFF6 !important;
+}
+.stApp button[kind="secondary"],
+.stApp button[data-testid="stBaseButton-secondary"] {
+  color: #F0F8FF !important;
+  background: #22354E !important;
+  border: 1px solid #71859F !important;
+}
+.stApp button[kind="secondary"] *,
+.stApp button[data-testid="stBaseButton-secondary"] * { color: #F0F8FF !important; opacity: 1 !important; }
+.stApp button[kind="secondary"]:hover,
+.stApp button[data-testid="stBaseButton-secondary"]:hover {
+  background: #304A69 !important;
+  border-color: #94DBE1 !important;
+}
 .block-container { max-width: 1550px; padding-top: 1.35rem; }
 .aps-tag { color: #65E5D9; font-size: .78rem; font-weight: 700; letter-spacing: .1em; }
 .aps-notice { background: #192B42; border: 1px solid #38516B;
@@ -110,6 +150,8 @@ def load_demo_scene(name):
 
 for key, value in {"seed": 42, "source": "Random", "preset": "Normal conditions", **PRESETS["Normal conditions"]}.items():
     st.session_state.setdefault(key, value)
+st.session_state.setdefault("demo_selected_zone", "zone_3")
+st.session_state.setdefault("live_selected_zone", "zone_3")
 
 def apply_preset():
     for key, value in PRESETS[st.session_state.preset].items():
@@ -248,9 +290,10 @@ with demo_tab:
     st.subheader("Source Localization: Live Simulation")
     st.caption("Explore how sensor coverage, missing readings, and noise affect source localization in an eight-zone simulated facility.")
     st.info(
-        "APS is a synthetic eight-zone source-localization experiment. "
-        "This facility is a graph, not a map of real rooms or airflow. "
-        "The source is hidden from predictors and used for scoring only."
+        "APS simulates eight connected zones. Room shapes are illustrative: "
+        "the connected graph and sensor readings come from the simulation, "
+        "not an architectural floor plan or airflow model. "
+        "The true source is hidden from the prediction methods."
     )
 
     scene_cols = st.columns(3)
@@ -276,17 +319,39 @@ with demo_tab:
     st.markdown("#### 1. Simulated Facility")
     view_left, view_right = st.columns([1.8, 1], gap="large")
     with view_left:
-        st.checkbox("Reveal True Source", key="demo_reveal")
-        st.plotly_chart(
-            facility_plot(snap, st.session_state.demo_reveal),
-            use_container_width=True,
-            config={"displaylogo": False, "scrollZoom": False},
+        demo_view = st.radio(
+            "Facility visualization", ["3D Rooms", "2D Network"],
+            key="demo_facility_view", horizontal=True,
         )
+        st.checkbox("Reveal True Source", key="demo_reveal")
+        if demo_view == "3D Rooms":
+            graph_figure = facility_3d_plot(
+                snap, build_facility(), predict_baseline(snap.readings),
+                show_source=st.session_state.demo_reveal,
+                selected_zone=st.session_state.demo_selected_zone,
+            )
+        else:
+            graph_figure = facility_plot(snap, st.session_state.demo_reveal)
+        st.plotly_chart(
+            graph_figure, use_container_width=True,
+            config={"displaylogo": False, "scrollZoom": True},
+        )
+        st.caption("Rotate and zoom the 3D facility with your mouse. Room positions are schematic; connections follow the APS graph.")
     with view_right:
         available = sum(reading is not None for reading in snap.readings.values())
         st.metric("Available sensor readings", f"{available} / 8")
         st.metric("Strongest-sensor baseline", zone_label(predict_baseline(snap.readings)))
         st.metric("Random seed", params.seed)
+        room = st.selectbox(
+            "Inspect a Room", sorted(snap.readings),
+            key="demo_selected_zone", format_func=zone_label,
+        )
+        value = snap.readings[room]
+        st.metric("Room Signal", "Unavailable" if value is None else f"{value:.3f}")
+        linked = sorted(build_facility().neighbors(room))
+        st.caption("Connected to: " + ", ".join(zone_label(z) for z in linked))
+        if snap.requested_zone == room:
+            st.caption("This room received the additional measurement.")
         if st.session_state.demo_reveal:
             st.metric("True source", zone_label(snap.true_source))
             error = baseline_error(snap)
@@ -483,12 +548,37 @@ with live:
     l, r = st.columns([1.75, 1], gap="large")
     with l:
         st.subheader("Eight-Zone Facility")
+        live_view = st.radio(
+            "Facility visualization", ["3D Rooms", "2D Network"],
+            key="live_facility_view", horizontal=True,
+        )
         st.toggle("Reveal hidden source", key="reveal_truth")
-        st.plotly_chart(facility_plot(snap, st.session_state.reveal_truth), use_container_width=True,
-                        config={"displaylogo": False, "scrollZoom": True})
-        st.caption("Hover or zoom to inspect nodes. Edges are graph connections, not airflow paths or physical distances.")
+        if live_view == "3D Rooms":
+            live_figure = facility_3d_plot(
+                snap, build_facility(), predict_baseline(snap.readings),
+                show_source=st.session_state.reveal_truth,
+                selected_zone=st.session_state.live_selected_zone,
+            )
+        else:
+            live_figure = facility_plot(snap, st.session_state.reveal_truth)
+        st.plotly_chart(
+            live_figure, use_container_width=True,
+            config={"displaylogo": False, "scrollZoom": True},
+        )
+        st.caption("Drag to rotate and scroll to zoom in 3D. Zone connections represent graph edges, not measured corridors or airflow.")
     with r:
         st.subheader("Sensor Readings")
+        room = st.selectbox(
+            "Inspect a Room", sorted(snap.readings),
+            key="live_selected_zone", format_func=zone_label,
+        )
+        room_reading = snap.readings[room]
+        st.caption(
+            f"{zone_label(room)}: "
+            + ("No available reading" if room_reading is None else f"Signal {room_reading:.3f}")
+            + " | Connected to: "
+            + ", ".join(zone_label(z) for z in sorted(build_facility().neighbors(room)))
+        )
         st.plotly_chart(reading_plot(snap), use_container_width=True,
                         config={"displaylogo": False})
         st.subheader("One Additional Measurement")
