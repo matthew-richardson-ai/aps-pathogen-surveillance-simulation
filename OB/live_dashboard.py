@@ -164,10 +164,18 @@ def apply_preset():
         st.session_state[key] = value
 
 def advance_seed():
-    """Advance the seed before Streamlit instantiates its number-input widget."""
+    """Generate a new random-source event, retaining the current conditions.
+
+    This callback runs before sidebar widgets are instantiated. Loading a
+    fixed demonstration preset remains reproducible, while generating a
+    new event deliberately switches away from that fixed source.
+    """
     max_seed = 2_000_000_000
     current = int(st.session_state["seed"])
     st.session_state["seed"] = current + 1 if current < max_seed else 0
+    st.session_state["source"] = "Random"
+    st.session_state["demo_reveal"] = False
+    st.session_state["reveal_truth"] = False
 
 with st.sidebar:
     st.markdown('<div class="aps-tag">APS / SIMULATION CONTROLS</div>', unsafe_allow_html=True)
@@ -182,12 +190,16 @@ with st.sidebar:
     st.slider("Source intensity", 0.20, 1.00, step=0.05, key="source_intensity")
     st.slider("Distance decay", 0.10, 1.50, step=0.05, key="decay_rate")
     st.button(
-        "Generate new seeded scenario",
+        "Generate New Scenario (Random Source)",
         type="primary",
         use_container_width=True,
         on_click=advance_seed,
     )
-    st.caption("Changing controls recomputes the simulation. The seed makes each run reproducible.")
+    st.caption(
+        "Preset demo buttons load fixed examples. Generating a new scenario keeps "
+        "the current sensor conditions but randomizes the hidden source and seed. "
+        "A random selection can occasionally pick the same zone again."
+    )
     st.divider()
     st.caption("CSC 4240 | Synthetic facility simulation only.")
 
