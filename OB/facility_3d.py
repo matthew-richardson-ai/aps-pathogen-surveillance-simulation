@@ -130,7 +130,7 @@ def facility_3d_plot(snapshot, graph, baseline_zone: str | None,
         ))
 
     for zone, label, marker_color, altitude, symbol in [
-        (baseline_zone, "Strongest-sensor estimate", "#7FF4C7", 1.05, "diamond"),
+        (baseline_zone, "Argmax Baseline", "#7FF4C7", 1.05, "diamond"),
         (snapshot.requested_zone, "Additional measurement", "#D1ADFF", 1.33, "diamond"),
         (snapshot.true_source if show_source else None, "True source", "#FFD76C", 1.62, "diamond"),
     ]:
