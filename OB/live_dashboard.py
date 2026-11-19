@@ -242,11 +242,11 @@ st.markdown('<div class="aps-tag">ARTIFICIAL INTELLIGENCE / INTERACTIVE SIMULATI
 st.title("Adaptive Pathogen Surveillance")
 st.caption("Scenario Lab | Explore how incomplete, noisy sensor data changes source localization.")
 
-demo_tab, live, models_tab, adaptive_tab, batch_tab, about = st.tabs(["Guided Demo", "Live Facility", "Model Comparison", "Adaptive Sampling", "Experiment Lab", "Methods"])
+demo_tab, live, models_tab, adaptive_tab, batch_tab, about = st.tabs(["APS Demonstration", "Live Facility", "Model Comparison", "Adaptive Sampling", "Experiment Lab", "Research Method"])
 
 with demo_tab:
-    st.subheader("Classroom Demonstration")
-    st.caption("A guided view of the real APS simulation. Load a fixed scenario, inspect the evidence, compare models, and request one additional measurement.")
+    st.subheader("Source Localization: Live Simulation")
+    st.caption("Explore how sensor coverage, missing readings, and noise affect source localization in an eight-zone simulated facility.")
     st.info(
         "APS is a synthetic eight-zone source-localization experiment. "
         "This facility is a graph, not a map of real rooms or airflow. "
@@ -273,10 +273,10 @@ with demo_tab:
     st.caption(f"Scenario: {scene_name} | Seed: {params.seed} | "
                f"Initial sensor budget: {params.initial_sensors} zones")
 
-    st.markdown("#### 1. Observe the simulated facility")
+    st.markdown("#### 1. Simulated Facility")
     view_left, view_right = st.columns([1.8, 1], gap="large")
     with view_left:
-        st.checkbox("Reveal the true source after discussing predictions", key="demo_reveal")
+        st.checkbox("Reveal True Source", key="demo_reveal")
         st.plotly_chart(
             facility_plot(snap, st.session_state.demo_reveal),
             use_container_width=True,
@@ -296,13 +296,13 @@ with demo_tab:
             "Changing the seed or conditions produces a different synthetic snapshot."
         )
 
-    st.markdown("#### 2. Compare source predictions")
+    st.markdown("#### 2. Source Predictions")
     st.caption(
         "Logistic Regression and Random Forest use the observed sensor values and missing-data indicators. "
         "They are trained on Justin's synthetic scenarios with a separate held-out test partition."
     )
     if not st.session_state.get("ml_enabled", False):
-        if st.button("Load and evaluate trained models", key="demo_train_models", type="primary"):
+        if st.button("Train and Compare Models", key="demo_train_models", type="primary"):
             try:
                 load_ml_artifacts()
                 st.session_state.ml_enabled = True
@@ -326,7 +326,7 @@ with demo_tab:
         except (FileNotFoundError, ValueError) as error:
             st.error(f"Model comparison unavailable: {error}")
 
-    st.markdown("#### 3. Request one additional measurement")
+    st.markdown("#### 3. Adaptive Sensor Selection")
     st.caption(
         "The information-gain policy estimates which currently unobserved zone is most informative. "
         "The new reading is revealed only after the model selects the zone."
@@ -339,7 +339,7 @@ with demo_tab:
         )
         candidates = [zone for zone, reading in snap.readings.items() if reading is None]
         if snap.requested_zone is None and candidates:
-            if st.button("Select and measure next zone", type="primary", key="demo_sample"):
+            if st.button("Select and Measure Next Zone", type="primary", key="demo_sample"):
                 try:
                     artifacts = load_ml_artifacts()
                     prior = source_prior(artifacts.models[demo_selector], snap.readings)
@@ -376,14 +376,14 @@ with demo_tab:
         else:
             st.caption("The selector has not yet requested an extra measurement.")
 
-    st.markdown("#### 4. Present repeated-trial results")
+    st.markdown("#### 4. Results Across Repeated Simulations")
     summary_path = ROOT / "Results" / "Demo" / "sampling_summary.csv"
     if summary_path.is_file():
         saved = pd.read_csv(summary_path)
         required = {"condition", "model", "strategy", "trials", "accuracy",
                     "mean_graph_error", "mean_additional_samples"}
         if not required.issubset(saved):
-            st.warning("Saved summary is missing columns. Re-run the experiment preparation script.")
+            st.error("Evaluation results could not be displayed because the saved summary is incomplete.")
         else:
             selected_condition = st.selectbox(
                 "Evaluation condition", sorted(saved["condition"].unique()),
@@ -402,12 +402,15 @@ with demo_tab:
                     y=group["accuracy"] * 100,
                     text=group["accuracy"].map(lambda v: f"{v:.1%}"),
                     textposition="outside",
+                    cliponaxis=False,
+                    textfont=dict(size=13),
                 ))
             fig.update_layout(
                 title=f"Measured accuracy: {selected_condition}",
-                barmode="group", height=350,
-                yaxis=dict(range=[0, 105], title="Exact-source accuracy (%)",
-                           gridcolor="#33475D"),
+                barmode="group", height=390,
+                yaxis=dict(range=[0, 115], title="Exact-source accuracy (%)",
+                           gridcolor="#33475D", dtick=20),
+                margin=dict(t=75, l=58, r=30, b=50),
                 paper_bgcolor=PANEL, plot_bgcolor=PANEL,
                 font=dict(color=MUTED),
             )
@@ -417,23 +420,11 @@ with demo_tab:
                 "the static strategy uses none. Results are based on repeated synthetic trials."
             )
     else:
-        st.warning(
-            "Final experiment results have not been generated on this machine. "
-            "Run: python Scripts/prepare_demo_results.py"
-        )
-
-    with st.expander("Presenter notes and limitations"):
-        st.markdown(
-            "Introduce the research question; show the network; explain the baseline and ML models; "
-            "select one new measurement; finish with the saved comparison across repeated events. "
-            "Each scenario is a static snapshot, not an animation of contamination spreading. "
-            "A stronger information-gain estimate does not guarantee higher classification accuracy. "
-            "Refer to Docs/APS_Demo_Runbook.md for a five-minute script."
-        )
+        st.info("Repeated-trial evaluation results are not available for display.")
 
 
 with live:
-    st.markdown('<div class="aps-notice">This dashboard runs the existing APS simulation. The green ring represents the strongest-sensor baseline, not a trained ML prediction. A single extra measurement can be requested manually.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="aps-notice">The connected zones represent a simulated facility. The green ring marks the strongest-sensor baseline prediction; a purple ring marks an additional sample. Sampling can be manual or model-selected.</div>', unsafe_allow_html=True)
     st.write("")
     prediction = predict_baseline(snap.readings)
     metrics = st.columns(4)
@@ -554,12 +545,14 @@ with models_tab:
                 marker_color=[CYAN, GREEN, PURPLE],
                 text=[f"{v:.1%}" for v in scores["accuracy"]],
                 textposition="outside",
+                cliponaxis=False,
+                textfont=dict(size=13),
             ))
             fig.update_layout(
                 title="Held-out exact-source accuracy",
-                yaxis=dict(title="Accuracy (%)", range=[0, 105], gridcolor="#26384f"),
+                yaxis=dict(title="Accuracy (%)", range=[0, 115], gridcolor="#26384f", dtick=20),
                 paper_bgcolor=PANEL, plot_bgcolor=PANEL, font=dict(color=MUTED),
-                height=340, showlegend=False,
+                height=385, margin=dict(t=75, l=58, r=30, b=50), showlegend=False,
             )
             st.plotly_chart(fig, use_container_width=True)
             st.subheader("Predictions on the Current Scenario")
@@ -577,9 +570,9 @@ with models_tab:
                     current_predictions[["model", "predicted_source"]],
                     on="model", suffixes=("_before", "_after")
                 )
-                before_after.columns = ["Model", "Before Manual Sample", "After Manual Sample"]
-                before_after = display_zone_columns(before_after, ["Before Manual Sample", "After Manual Sample"])
-                st.caption(f"Comparison after the manual sample at {zone_label(snap.requested_zone)}")
+                before_after.columns = ["Model", "Before Additional Sample", "After Additional Sample"]
+                before_after = display_zone_columns(before_after, ["Before Additional Sample", "After Additional Sample"])
+                st.caption(f"Prediction comparison after sampling {zone_label(snap.requested_zone)}")
                 st.dataframe(before_after, hide_index=True, use_container_width=True)
             by_condition = trained.test_predictions.groupby(
                 ["scenario_type", "model"]
@@ -603,7 +596,7 @@ with models_tab:
                 trained.test_predictions.to_csv(index=False).encode("utf-8"),
                 file_name="aps_holdout_model_predictions.csv", mime="text/csv"
             )
-            st.caption("The current scenario is a simulated demonstration. Test-set metrics use Justin's saved split. Class probabilities are not calibrated confidence estimates. No AI-based sampling policy has been implemented.")
+            st.caption("Held-out accuracy measures predictions on previously unseen simulated events. Model class probabilities are not calibrated confidence estimates.")
         except (FileNotFoundError, ValueError) as exc:
             st.error(f"Unable to train or evaluate models: {exc}")
 
@@ -670,13 +663,16 @@ with adaptive_tab:
                 y=group["accuracy"] * 100,
                 text=[f"{a:.1%}" for a in group["accuracy"]],
                 textposition="outside",
+                cliponaxis=False,
+                textfont=dict(size=13),
             ))
         fig.update_layout(
             barmode="group", title="Accuracy on matched simulated events",
-            yaxis=dict(title="Exact-source accuracy (%)", range=[0, 105],
-                       gridcolor="#27394e"),
+            yaxis=dict(title="Exact-source accuracy (%)", range=[0, 115],
+                       gridcolor="#27394e", dtick=20),
             paper_bgcolor=PANEL, plot_bgcolor=PANEL,
-            font=dict(color=MUTED), height=390,
+            font=dict(color=MUTED), height=415,
+            margin=dict(t=75, l=58, r=30, b=50),
         )
         st.plotly_chart(fig, use_container_width=True)
         for name, group in summary.groupby("model", sort=False):
@@ -740,7 +736,7 @@ with batch_tab:
         ))
         fig.update_layout(title="Baseline accuracy by true source", height=345,
                           paper_bgcolor=PANEL, plot_bgcolor=PANEL, font=dict(color=MUTED),
-                          yaxis=dict(range=[0, 105], title="Accuracy (%)", gridcolor="#26384f"))
+                          yaxis=dict(range=[0, 110], title="Accuracy (%)", gridcolor="#26384f"))
         st.plotly_chart(fig, use_container_width=True)
         st.caption("All trials count toward accuracy, including abstentions as incorrect. Graph-distance error excludes abstentions.")
         st.download_button("Download trial records", results.to_csv(index=False).encode(),
