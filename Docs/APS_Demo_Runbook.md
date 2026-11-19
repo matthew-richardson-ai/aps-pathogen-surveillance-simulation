@@ -51,7 +51,7 @@ Click **Normal Conditions**, then **Missing Readings** or **Combined Stress**. D
 
 Suggested wording:
 
-> Our baseline simply selects the zone with the strongest available sensor reading. Logistic Regression and Random Forest are trained on Justin's synthetic dataset, using sensor readings and missingness indicators. We evaluate them on held-out simulated events instead of reporting their training accuracy.
+> Our baseline is the **Maximum-Sensor-Reading (Argmax) algorithm**. Argmax selects the zone with the highest available sensor value. It is a deterministic rule, not a trained model. Logistic Regression and Random Forest are trained on Justin's synthetic dataset using readings and missingness indicators. We evaluate them on held-out simulated events rather than reporting training accuracy.
 
 Open **Model Comparison** and reference the actual calculated test metrics. If the interface is slow, use precomputed `heldout_model_summary.csv`.
 
@@ -102,7 +102,9 @@ Do not use the phrase "real-time pathogen surveillance" for this implementation.
 
 ## Questions the professor may ask
 
-**Why a baseline?** It tells us whether more complex algorithms actually improve on choosing the strongest observed sensor.
+**What is the baseline algorithm?** The Maximum-Sensor-Reading (Argmax) heuristic: choose the observed zone with the largest sensor value. It is also known as a maximum-reading or winner-take-all decision rule; it is not a machine-learning classifier.
+
+**Why use a baseline?** It tells us whether trained classifiers outperform a simple deterministic maximum-reading rule.
 
 **What are the model inputs?** Eight readings plus eight missingness indicators. No true-source labels or simulation metadata enter the predictors.
 
