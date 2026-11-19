@@ -42,6 +42,12 @@ def zone_label(zone):
 def condition_label(value):
     return str(value).replace("_", " ").title()
 
+ARGMAX_LABEL = "Argmax Baseline"
+
+def method_label(value):
+    """Present the existing heuristic by its mathematical algorithm name."""
+    return ARGMAX_LABEL if value in ("Strongest sensor", "Strongest Sensor") else value
+
 def display_zone_columns(frame, names):
     display = frame.copy()
     for field in names:
@@ -235,9 +241,9 @@ def facility_plot(snapshot, reveal):
     if prediction:
         x, y = POS[prediction]
         fig.add_trace(go.Scatter(
-            x=[x], y=[y], mode="markers", name="Baseline prediction",
+            x=[x], y=[y], mode="markers", name="Argmax Baseline",
             marker=dict(symbol="circle-open", size=78, line=dict(color=GREEN, width=6)),
-            hovertemplate=f"Baseline prediction: {zone_label(prediction)}<extra></extra>",
+            hovertemplate=f"Argmax Baseline: {zone_label(prediction)}<extra></extra>",
         ))
     if snapshot.requested_zone:
         x, y = POS[snapshot.requested_zone]
@@ -339,7 +345,7 @@ with demo_tab:
         if demo_view == "3D Rooms":
             st.caption(
                 "Drag to rotate; scroll to zoom. Blue = low signal, amber = high signal, "
-                "gray = unavailable. Green diamond = baseline, purple = additional sample, "
+                "gray = unavailable. Green diamond = Argmax prediction, purple = additional sample, "
                 "gold = true source when revealed."
             )
         else:
@@ -347,7 +353,7 @@ with demo_tab:
     with view_right:
         available = sum(reading is not None for reading in snap.readings.values())
         st.metric("Available sensor readings", f"{available} / 8")
-        st.metric("Strongest-sensor baseline", zone_label(predict_baseline(snap.readings)))
+        st.metric(ARGMAX_LABEL, zone_label(predict_baseline(snap.readings)))
         st.metric("Random seed", params.seed)
         room = st.selectbox(
             "Inspect a Room", sorted(snap.readings),
@@ -363,15 +369,19 @@ with demo_tab:
             st.metric("True source", zone_label(snap.true_source))
             error = baseline_error(snap)
             st.caption(f"Baseline graph-distance error: {error if error is not None else 'N/A'} edges")
+        st.markdown("**Maximum-Sensor-Reading (Argmax) Algorithm**")
         st.caption(
-            "The baseline chooses the highest available sensor reading. "
-            "Changing the seed or conditions produces a different synthetic snapshot."
+            "A deterministic heuristic: predict the zone with the highest "
+            "available sensor value. It does not use model training."
         )
+        st.markdown(r"$\\hat{s} = \\arg\\max_{i\\in O} r_i$")
+        st.caption("O = observed zones; rᵢ = the reading at zone i.")
 
     st.markdown("#### 2. Source Predictions")
-    st.caption(
-        "Logistic Regression and Random Forest use the observed sensor values and missing-data indicators. "
-        "They are trained on Justin's synthetic scenarios with a separate held-out test partition."
+    st.write(
+        "**Argmax Baseline** uses the maximum observed reading without training. "
+        "**Logistic Regression** and **Random Forest** instead learn patterns "
+        "from readings and missingness indicators using Justin's synthetic training scenarios."
     )
     if not st.session_state.get("ml_enabled", False):
         if st.button("Train and Compare Models", key="demo_train_models", type="primary"):
@@ -460,7 +470,7 @@ with demo_tab:
             )
             comparison.columns = ["Model", "Before", "After"]
             baseline_comparison = pd.DataFrame([{
-                "Model": "Strongest Sensor",
+                "Model": ARGMAX_LABEL,
                 "Before": snap.initial_prediction,
                 "After": predict_baseline(snap.readings),
             }])
@@ -535,12 +545,12 @@ with demo_tab:
 
 
 with live:
-    st.markdown('<div class="aps-notice">The connected zones represent a simulated facility. The green ring marks the strongest-sensor baseline prediction; a purple ring marks an additional sample. Sampling can be manual or model-selected.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="aps-notice">The green ring indicates the Argmax Baseline prediction: the zone with the highest observed sensor reading. The purple ring identifies the additional sample.</div>', unsafe_allow_html=True)
     st.write("")
     prediction = predict_baseline(snap.readings)
     metrics = st.columns(4)
     metrics[0].metric("Available readings", f"{sum(x is not None for x in snap.readings.values())}/8")
-    metrics[1].metric("Baseline predicts", zone_label(prediction))
+    metrics[1].metric(ARGMAX_LABEL, zone_label(prediction))
     metrics[2].metric("Sensor noise", f"{params.noise_std:.2f}")
     metrics[3].metric("Missing probability", f"{params.missing_rate:.0%}")
     if st.session_state.get("ml_enabled", False):
@@ -575,7 +585,7 @@ with live:
         if live_view == "3D Rooms":
             st.caption(
                 "Rotate and zoom the facility. Blue = low, amber = high, gray = unavailable. "
-                "Green = baseline prediction, purple = additional sample, gold = revealed source."
+                "Green = Argmax prediction, purple = additional sample, gold = revealed source."
             )
         else:
             st.caption("Graph edges show connectivity, not physical distances or airflow.")
@@ -644,8 +654,8 @@ with live:
         if st.session_state.reveal_truth:
             before, after = baseline_error(snap, after_sample=False), baseline_error(snap)
             st.write(f"True source: {zone_label(snap.true_source)}")
-            st.write(f"Initial baseline: {zone_label(snap.initial_prediction)} | error: {before if before is not None else 'N/A'}")
-            st.write(f"Current baseline: {zone_label(prediction)} | error: {after if after is not None else 'N/A'}")
+            st.write(f"Initial Argmax: {zone_label(snap.initial_prediction)} | error: {before if before is not None else 'N/A'}")
+            st.write(f"Current Argmax: {zone_label(prediction)} | error: {after if after is not None else 'N/A'}")
     table = pd.DataFrame([
         {"zone": z, "initially_selected": z in snap.initially_selected, "reading": snap.readings[z]}
         for z in sorted(snap.readings)
@@ -664,7 +674,7 @@ with models_tab:
     if st.button("Train models and evaluate held-out test data", type="primary"):
         st.session_state.ml_enabled = True
     if not st.session_state.get("ml_enabled", False):
-        st.info("Train the models to compare them against the strongest-sensor baseline.")
+        st.info("Compare Logistic Regression and Random Forest against the rule-based Maximum-Sensor-Reading (Argmax) Baseline.")
     else:
         try:
             trained = load_ml_artifacts()
@@ -675,6 +685,7 @@ with models_tab:
             )
             scores = trained.scores.copy()
             shown_scores = scores.copy()
+            shown_scores["model"] = shown_scores["model"].map(method_label)
             shown_scores["accuracy"] = shown_scores["accuracy"].map(lambda x: f"{x:.1%}")
             shown_scores["mean_graph_error"] = shown_scores["mean_graph_error"].map(
                 lambda x: "N/A" if pd.isna(x) else f"{x:.3f}"
@@ -682,7 +693,7 @@ with models_tab:
             shown_scores.columns = ["Model", "Exact accuracy", "Mean graph error (edges)", "Test scenarios"]
             st.dataframe(shown_scores, hide_index=True, use_container_width=True)
             fig = go.Figure(go.Bar(
-                x=scores["model"],
+                x=scores["model"].map(method_label),
                 y=scores["accuracy"] * 100,
                 marker_color=[CYAN, GREEN, PURPLE],
                 text=[f"{v:.1%}" for v in scores["accuracy"]],
@@ -854,10 +865,10 @@ with adaptive_tab:
 
 
 with batch_tab:
-    st.subheader("Baseline-only repeated experiments")
-    st.write("Run independent seeded simulations at the current settings, with a randomized hidden source each time. These are genuine synthetic APS results, not estimates of ML-model accuracy.")
+    st.subheader("Argmax Baseline: Repeated Experiments")
+    st.write("Evaluate the Maximum-Sensor-Reading (Argmax) Baseline on independent simulated events. Each prediction selects the zone with the highest available reading. This rule uses no training data.")
     n = st.slider("Trials", 20, 300, 100, 20)
-    if st.button("Run baseline trials", type="primary"):
+    if st.button("Run Argmax Trials", type="primary"):
         st.session_state.batch_results = pd.DataFrame(batch_baseline(params, n=n))
     results = st.session_state.get("batch_results")
     if results is None:
@@ -876,7 +887,7 @@ with batch_tab:
             customdata=summary["trials"],
             hovertemplate="%{x}: %{y:.1f}% (n=%{customdata})<extra></extra>",
         ))
-        fig.update_layout(title="Baseline accuracy by true source", height=345,
+        fig.update_layout(title="Argmax Baseline Accuracy by True Source", height=345,
                           paper_bgcolor=PANEL, plot_bgcolor=PANEL, font=dict(color=MUTED),
                           yaxis=dict(range=[0, 110], title="Accuracy (%)", gridcolor="#26384f"))
         st.plotly_chart(fig, use_container_width=True)
@@ -902,11 +913,22 @@ with about:
         "event using noisy or missing sensor readings, and can one strategically selected "
         "additional measurement improve source localization?**"
     )
+    st.subheader("Localization Algorithms")
+    st.markdown(
+        "**1. Maximum-Sensor-Reading (Argmax) Baseline:** A deterministic "
+        "reference algorithm selecting the location of the highest observed signal. "
+        "There is no training step.\n"
+        "**2. Logistic Regression:** A supervised multiclass classifier trained "
+        "to recognize source locations from eight readings and eight missingness flags.\n"
+        "**3. Random Forest:** A supervised ensemble of decision trees trained "
+        "on the same inputs for a fair comparison."
+    )
+    st.markdown(r"**Argmax prediction:** $\\hat{s} = \\arg\\max_{i\\in O} r_i$")
     st.subheader("Experimental Method")
     st.markdown(
         "1. **Simulate:** Assign a hidden source to one of eight connected zones. "
         "Signals decrease with graph distance, with adjustable noise and missing observations.\n"
-        "2. **Predict:** Compare the strongest-sensor baseline against Logistic Regression "
+        "2. **Predict:** Compare the Maximum-Sensor-Reading (Argmax) Baseline against Logistic Regression "
         "and Random Forest trained on synthetic observations.\n"
         "3. **Sample:** Select one extra measurement at random or at the zone with "
         "the highest estimated information gain. Both strategies use the same budget.\n"
