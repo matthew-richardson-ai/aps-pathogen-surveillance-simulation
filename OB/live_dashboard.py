@@ -376,6 +376,29 @@ with demo_tab:
         else:
             st.caption("The selector has not yet requested an extra measurement.")
 
+    if snap.requested_zone is not None and st.session_state.get("ml_enabled", False):
+        try:
+            trained_models = load_ml_artifacts()
+            previous_readings = simulate(params).readings
+            initial = predict_models(trained_models, previous_readings)
+            updated = predict_models(trained_models, snap.readings)
+            comparison = initial[["model", "predicted_source"]].merge(
+                updated[["model", "predicted_source"]],
+                on="model", suffixes=("_initial", "_updated"),
+            )
+            comparison.columns = ["Model", "Before", "After"]
+            baseline_comparison = pd.DataFrame([{
+                "Model": "Strongest Sensor",
+                "Before": snap.initial_prediction,
+                "After": predict_baseline(snap.readings),
+            }])
+            comparison = pd.concat([baseline_comparison, comparison], ignore_index=True)
+            comparison = display_zone_columns(comparison, ["Before", "After"])
+            st.markdown("**Source Predictions Before and After Sampling**")
+            st.dataframe(comparison, hide_index=True, use_container_width=True)
+        except (FileNotFoundError, ValueError) as error:
+            st.error(f"Prediction comparison unavailable: {error}")
+
     st.markdown("#### 4. Results Across Repeated Simulations")
     summary_path = ROOT / "Results" / "Demo" / "sampling_summary.csv"
     if summary_path.is_file():
