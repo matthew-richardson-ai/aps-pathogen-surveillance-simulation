@@ -51,3 +51,26 @@ The engine was exercised with six deterministic unit tests locally using the sam
 3. Run `python -m pytest Tests/test_ml_pipeline.py -q` for the model integration tests.
 4. Implement and validate a genuine confidence-/information-based one-step sampling policy and budget-matched random comparator.
 5. Export paired static versus one-sample predictions to Owen's evaluation dashboard.
+
+
+## Interactive 3D facility (presentation view)
+
+The **APS Demonstration** and **Live Facility** tabs now include a **Facility visualization** choice:
+
+- **3D Rooms** (default): rotate with mouse drag, zoom with the wheel and hover over individual rooms for their observed sensor readings. The **Inspect a Room** selector highlights a room, gives its signal value and lists the connected zones.
+- **2D Network**: retains the original APS connected graph for explaining graph topology.
+
+The 3D scene is a *schematic cutaway*, not a surveyed building floor plan. All eight modeled rooms correspond exactly to the canonical NetworkX nodes; connecting lines are derived from the simulation graph. Floor colors use the current measured signal, with gray for missing/unobserved values. Green identifies the strongest-sensor baseline, purple identifies the extra measurement, and gold reveals the true source only when the reveal toggle is enabled.
+
+Changing the scenario, number of available sensors, noise, missingness or chosen sample updates the same facility view. This is interactive spatial visualization **of a static simulation snapshot**; no real-time biological sensors or time-dependent transport are implied.
+
+The dashboard also uses a high-contrast theme designed for classroom projector visibility, including bright explanatory text and dark lettering on teal primary buttons.
+
+### 3D smoke test
+
+```powershell
+python -m pytest Tests/test_facility_3d.py -q
+python -m streamlit run OB/live_dashboard.py
+```
+
+The 3D renderer uses the existing `plotly` dependency; no additional 3D engine or graphics packages are required.
