@@ -419,6 +419,22 @@ with demo_tab:
                 "Both random and information-gain strategies use one additional measurement; "
                 "the static strategy uses none. Results are based on repeated synthetic trials."
             )
+            metrics_table = subset[[
+                "model", "strategy", "trials", "accuracy",
+                "mean_graph_error", "mean_additional_samples",
+            ]].copy()
+            metrics_table["accuracy"] = metrics_table["accuracy"].map(lambda v: f"{v:.1%}")
+            metrics_table["mean_graph_error"] = metrics_table["mean_graph_error"].map(
+                lambda v: "N/A" if pd.isna(v) else f"{v:.2f}"
+            )
+            metrics_table["mean_additional_samples"] = metrics_table["mean_additional_samples"].map(
+                lambda v: f"{v:.1f}"
+            )
+            metrics_table.columns = [
+                "Model", "Sampling Strategy", "Trials", "Accuracy",
+                "Mean Graph Error (Edges)", "Additional Measurements",
+            ]
+            st.dataframe(metrics_table, hide_index=True, use_container_width=True)
     else:
         st.info("Repeated-trial evaluation results are not available for display.")
 
@@ -754,10 +770,29 @@ with batch_tab:
             st.dataframe(shown_baseline, use_container_width=True, hide_index=True)
 
 with about:
-    st.subheader("What this demonstrator actually does")
-    st.write("The facility, source selection, exponential graph-distance decay, noisy or missing readings, and baseline all come directly from APS core modules. Each display is a single spatial snapshot, not time-dependent propagation.")
-    st.write("Implemented: interactive graph, simulated conditions, source reveal, manual follow-up sample, deterministic seeds, baseline metrics and trial CSV export.")
-    st.write("Optional: Logistic Regression and Random Forest predictions are available after training on Justin's saved synthetic dataset. These class probabilities are not calibrated confidence estimates.")
-    st.write("Implemented experimentally: expected-information-gain zone selection and paired comparison against random additional sampling. The selector uses uncalibrated model probabilities and the assumed spatial signal model.")
-    st.write("Not yet implemented: calibrated probabilities, time-dependent transport, or production biosensing.")
-    st.write("Next: validate more random seeds and scenario settings, review failure cases, and incorporate results into the final report.")
+    st.subheader("Research Question")
+    st.markdown(
+        "**Can machine learning identify the hidden source of a simulated contamination "
+        "event using noisy or missing sensor readings, and can one strategically selected "
+        "additional measurement improve source localization?**"
+    )
+    st.subheader("Experimental Method")
+    st.markdown(
+        "1. **Simulate:** Assign a hidden source to one of eight connected zones. "
+        "Signals decrease with graph distance, with adjustable noise and missing observations.\n"
+        "2. **Predict:** Compare the strongest-sensor baseline against Logistic Regression "
+        "and Random Forest trained on synthetic observations.\n"
+        "3. **Sample:** Select one extra measurement at random or at the zone with "
+        "the highest estimated information gain. Both strategies use the same budget.\n"
+        "4. **Evaluate:** Measure exact-source accuracy and shortest-path error "
+        "against the simulator's known ground truth over repeated events."
+    )
+    st.subheader("Interpretation and Limitations")
+    st.write(
+        "The network is an idealized spatial graph, not a real building or airflow simulation. "
+        "Each event represents a single spatial snapshot, not contamination spreading through time."
+    )
+    st.write(
+        "Higher expected information gain does not guarantee higher source-identification accuracy. "
+        "We compare the results empirically, and the classifiers' probabilities have not been calibrated."
+    )
