@@ -17,7 +17,7 @@ Streamlit should open a browser window, typically at http://localhost:8501.
 - Six condition presets: normal, limited coverage, noisy sensors, missing sensors, weak source, and combined stress.
 - Change the hidden source (random or fixed), random seed, initially observed zones, measurement noise, missing-reading probability, source strength, and graph-distance decay.
 - Interactive Plotly facility visualization: hover/zoom to inspect sensor values. Display or hide the hidden source.
-- Run the existing strongest-sensor baseline from Localization/baselines.py, including graceful handling of zero available readings.
+- Run the **Maximum-Sensor-Reading (Argmax) Baseline** from `Localization/baselines.py`. The deterministic rule is `max(available, key=available.get)`: it chooses the zone with the highest available reading; it does not train on data. If every reading is missing, the dashboard reports no prediction.
 - Request **one manually chosen additional observation** at a zone without a reading, and inspect the changed baseline prediction.
 - Run independent baseline-only trials, graph exact-source accuracy by source zone, and export CSV.
 
@@ -60,7 +60,7 @@ The **APS Demonstration** and **Live Facility** tabs now include a **Facility vi
 - **3D Rooms** (default): rotate with mouse drag, zoom with the wheel and hover over individual rooms for their observed sensor readings. The **Inspect a Room** selector highlights a room, gives its signal value and lists the connected zones.
 - **2D Network**: retains the original APS connected graph for explaining graph topology.
 
-The 3D scene is a *schematic cutaway*, not a surveyed building floor plan. All eight modeled rooms correspond exactly to the canonical NetworkX nodes; connecting lines are derived from the simulation graph. Floor colors use the current measured signal, with gray for missing/unobserved values. Green identifies the strongest-sensor baseline, purple identifies the extra measurement, and gold reveals the true source only when the reveal toggle is enabled.
+The 3D scene is a *schematic cutaway*, not a surveyed building floor plan. All eight modeled rooms correspond exactly to the canonical NetworkX nodes; connecting lines are derived from the simulation graph. Floor colors use the current measured signal, with gray for missing/unobserved values. Green identifies the Argmax Baseline prediction, purple identifies the extra measurement, and gold reveals the true source only when the reveal toggle is enabled.
 
 Changing the scenario, number of available sensors, noise, missingness or chosen sample updates the same facility view. This is interactive spatial visualization **of a static simulation snapshot**; no real-time biological sensors or time-dependent transport are implied.
 
