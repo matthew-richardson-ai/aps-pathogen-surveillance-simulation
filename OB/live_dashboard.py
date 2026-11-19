@@ -336,7 +336,14 @@ with demo_tab:
             graph_figure, use_container_width=True,
             config={"displaylogo": False, "scrollZoom": True},
         )
-        st.caption("Rotate and zoom the 3D facility with your mouse. Room positions are schematic; connections follow the APS graph.")
+        if demo_view == "3D Rooms":
+            st.caption(
+                "Drag to rotate; scroll to zoom. Blue = low signal, amber = high signal, "
+                "gray = unavailable. Green diamond = baseline, purple = additional sample, "
+                "gold = true source when revealed."
+            )
+        else:
+            st.caption("Connections show graph edges, not actual corridors or airflow.")
     with view_right:
         available = sum(reading is not None for reading in snap.readings.values())
         st.metric("Available sensor readings", f"{available} / 8")
@@ -565,7 +572,13 @@ with live:
             live_figure, use_container_width=True,
             config={"displaylogo": False, "scrollZoom": True},
         )
-        st.caption("Drag to rotate and scroll to zoom in 3D. Zone connections represent graph edges, not measured corridors or airflow.")
+        if live_view == "3D Rooms":
+            st.caption(
+                "Rotate and zoom the facility. Blue = low, amber = high, gray = unavailable. "
+                "Green = baseline prediction, purple = additional sample, gold = revealed source."
+            )
+        else:
+            st.caption("Graph edges show connectivity, not physical distances or airflow.")
     with r:
         st.subheader("Sensor Readings")
         room = st.selectbox(
