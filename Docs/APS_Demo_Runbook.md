@@ -82,9 +82,30 @@ Do not use the phrase "real-time pathogen surveillance" for this implementation.
 
 ### Updated localization explanation
 
-The dashboard now compares the **Argmax Baseline**, **Logistic Regression** and **Random Forest** trained on the same 16 sensor/missingness inputs, plus a **Graph-Aware Likelihood (Known Params)** inference method. It retains the original (non-augmented) ML models as controls against the robust augmented versions. Say clearly that graph likelihood uses known simulator intensity, decay and noise settings, which the learned classifiers are *not* given; it is not a like-for-like supervised classifier.
+The dashboard compares the **Argmax Baseline**, robust and original
+**Logistic Regression** and **Random Forest**, and **Graph-Aware Bayesian
+Inference**. The trained models receive sixteen sensor reading/missingness
+features, while the graph method assumes the known graph topology and a
+family of exponential signal-decay relationships. It **does not** receive
+the event's actual intensity, decay, noise, true source or ideal signals.
 
-The original training dataset is not overwritten. Augmented sparse/noisy views are created from the training partition only. Compare actual held-out results after regenerating the experiment outputs; if robust training performs worse, report that outcome. In the live demo, show the source after predictions and include **Source Unobserved Accuracy** in the results discussion.
+The graph estimator sums over plausible nuisance settings instead of being
+told which settings the simulator actually used. For adaptive selection,
+all methods rely on the observed readings and a predefined, parameter-blind
+information-gain policy. The true source is only provided to the scoring
+layer **after Reveal True Source**.
+
+Once revealed, explain **Correct?** (exact match), **Graph Distance** (shortest
+number of graph edges to the source), and **Error Reduction** (before minus
+after; positive means closer). Never claim every individual extra reading
+improves the result.
+
+**Important historical-results warning:** Previous benchmarks for
+"Graph-Aware Likelihood (Known Params)" used actual event signal/noise
+settings. Their published percentages, including 36%→68% Combined Stress,
+are valid only for that earlier method. Regenerate the Results/Demo outputs
+for this blind version and report its *new* measured outcomes, whether
+positive or negative.
 
 ## Presenter checklist
 
@@ -113,7 +134,7 @@ The original training dataset is not overwritten. Augmented sparse/noisy views a
 
 **Why use a baseline?** It tells us whether trained classifiers outperform a simple deterministic maximum-reading rule.
 
-**What are the ML model inputs?** Eight readings plus eight missingness indicators; no source label or simulation metadata enters the learned classifiers. The separate graph likelihood method also assumes known simulator intensity, spatial decay and sensor noise settings.
+**What are the ML model inputs?** Eight readings plus eight missingness indicators; no true source or simulation metadata is an inference feature. Graph-aware Bayesian inference instead uses the observed readings and public graph, integrating over unknown intensity, decay, and noise rather than reading scenario settings.
 
 **How is adaptive selection chosen?** Expected reduction in uncertainty about source location, estimated across possible next measurements using the assumed graph-distance signal model.
 
