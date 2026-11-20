@@ -30,8 +30,11 @@ The dashboard uses these measured results; numbers are not hard-coded.
 - **3D Rooms / 2D Network:** Rotatable schematic eight-room view or graph view,
   built from the canonical NetworkX topology. Gray means no reading, not zero.
   Hover for observations, or use **Inspect a Room** to highlight a location.
-- **Reveal True Source:** Hidden during prediction and displayed only for
-  evaluation. The true source is never an input to the prediction algorithms.
+- **Reveal True Source:** Hidden during inference. Once revealed, both the
+  main prediction table and before/after table display **Correct?**, shortest-
+  path **Graph Distance (edges)** and **Error Reduction (edges)**. These are
+  calculated in a separate presentation-only scoring module, never by any
+  predictor or sampling policy.
 - **Adaptive Sensor Selection:** Choose a learned classifier or graph likelihood
   as the probability source. The entropy-based selector chooses one currently
   unobserved room. Random and information-gain policies each get one sample.
@@ -45,13 +48,15 @@ The dashboard uses these measured results; numbers are not hard-coded.
 | **Random Forest (Original)** | Original Justin training data and same 16 features |
 | **Logistic Regression** | Original training rows plus three sparse/noisy *training-only* views per row |
 | **Random Forest** | Same augmented training views, same 16 inputs |
-| **Graph-Aware Likelihood (Known Params)** | Current observed readings plus **known simulation intensity, graph decay, and measurement noise** |
+| **Graph-Aware Bayesian Inference** | Observed readings, known graph topology and a fixed range of plausible (unknown) intensity/decay/noise values |
 
-The graph-aware method has a **different information budget** from the ML
-classifiers; do not present it as an equally informed head-to-head comparison.
-It uses censored Gaussian likelihood to model the simulator's clipping at zero
-and one, and separately accounts for follow-up measurement noise SD 0.04.
-Missing observations provide no evidence. An all-missing scenario abstains.
+All source predictors are blind to the source label and actual per-event
+signal/noise settings. The graph-aware method assumes the public graph and
+exponential signal family and marginalizes over predefined physical parameter
+ranges. It uses censored Gaussian likelihood for clipped sensor readings and
+the fixed follow-up instrument noise SD 0.04. Missing observations provide no
+evidence and all-missing scenarios abstain. The graph model still has stronger
+structural assumptions than the data-only supervised classifiers.
 
 Robust training is not guaranteed to help: both the original and augmented
 classifiers are evaluated on the same held-out partition and remain visible
@@ -63,7 +68,7 @@ for assumptions, pseudocode and evaluation constraints.
 
 - **Model Comparison:** Held-out exact-source accuracy, graph error, and
   condition-specific performance across original/augmented models. The graph
-  method appears on held-out data only if simulation parameter metadata exists.
+  method also runs on records without simulation-parameter metadata.
 - **Adaptive Sampling:** Matched static/no-sample, one-random-sample, and
   one-information-gain-sample runs on identical seeded events. Compare
   exact-source accuracy, graph error, additional sample budget, and results when
@@ -76,7 +81,9 @@ Saved final evaluation covers 100 independent events per condition: Normal,
 High Noise, Missing Readings and Combined Stress. Check actual computed
 metrics before describing gains. A single successful seed is not evidence of
 aggregate superiority. Probability scores assume a model and are not universal
-confidence guarantees.
+confidence guarantees. **Any Results/Demo files saved using the previous
+Known Params graph method are outdated and must be regenerated before
+quoting graph accuracy.**
 
 ## Test suites
 
