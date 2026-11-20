@@ -13,6 +13,8 @@ pandas
 
 # Machine Learning
 scikit-learn
+# Censored-Gaussian graph likelihood and numeric log-probabilities
+scipy
 
 # Graph Modeling
 networkx
