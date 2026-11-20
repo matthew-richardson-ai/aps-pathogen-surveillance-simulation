@@ -27,11 +27,13 @@ bug. Some observed patterns genuinely support multiple source locations.
 | Random Forest (Original) | Original training rows | Same | Historical supervised control |
 | Logistic Regression | Original + augmented *training-only* views | Same | Robust supervised candidate |
 | Random Forest | Original + augmented *training-only* views | Same | Robust supervised candidate |
-| Graph-Aware Likelihood (Known Params) | None | Available readings **and configured intensity, distance decay, noise** | Parameter-aware inference reference |
+| Graph-Aware Bayesian Inference | None | Available readings and public graph/model family; integrates over unknown intensity, decay, and noise | Model-based inference reference |
 
-Do **not** describe graph likelihood as having the same information budget as
-the learned models. It is purposefully a more informed physics-based reference,
-not a fair apples-to-apples ML input comparison.
+The model-based method assumes graph topology and an exponential signal family,
+which are not explicit features in the ML classifiers. However, **none of the
+current predictors receives the true source or per-event simulator settings**.
+The previous Known Params algorithm is archived as a historical comparator;
+its numerical results must not be presented as current.
 
 ## Robust training-only augmentation
 
@@ -58,36 +60,59 @@ The dataset itself is **not overwritten**. The standard and robust models
 remain separately scored on identical held-out observations, so any performance
 regression is visible.
 
-## Graph-Aware Likelihood (Known Params)
+## Graph-Aware Bayesian Inference — no hidden scenario parameters
 
 Implemented in `Localization/graph_likelihood.py`.
 
-For each proposed source zone `s`, compute the expected signal at every
-observed room `i`:
+Rather than receiving the simulator's actual source intensity, graph decay,
+or primary measurement noise, this inference algorithm receives **only
+observed readings**, an optional follow-up zone indicator, and the public APS
+eight-zone graph. It also assumes that a graph-distance signal-decay model is
+an appropriate family of models. This structural assumption is not equivalent
+to knowing the hidden source.
+
+For a candidate source `s`, possible intensity `A`, and possible decay `λ`,
+the model predicts the hypothetical mean signal at room `i`:
 
 ```text
-mean(i | s) = intensity * exp(-decay_rate * graph_distance(s, i))
+mean(i | s,A,λ) = A * exp(-λ * graph_distance(s,i))
 ```
 
-Score that hypothesis with independent Gaussian observation noise, ignoring
-unavailable sensor readings rather than treating them as zero. Because the
-simulator clips readings to [0,1], the method uses tail probabilities for
-observed zeros and ones (censored Gaussian likelihood) and a regular Gaussian
-density for readings strictly between those limits. The model assumes a flat
-prior over eight possible sources and normalizes candidate likelihoods. It
-returns the most probable candidate and a full eight-zone ranking.
+The estimator tests **every source** against a fixed, scenario-independent
+grid of possible nuisance settings:
 
-For one follow-up observation, its configured noise SD is **0.04**, distinct
-from the initial sensor noise. If all sensors are missing, the displayed
-prediction abstains; it never fabricates a source estimate.
+- Intensity: 0.30, 0.50, 0.75, 1.00
+- Distance decay: 0.35, 0.65, 0.95, 1.25
+- Primary sensor noise SD: 0.06, 0.16, 0.30
 
-**Assumptions:** The graph and exponential signal model are exactly the
-simulator's, and `source_intensity`, `decay_rate` and `noise_std` are
-provided from the scenario controls. No true source ID or ideal signals are
-provided for prediction. On a real facility these physical parameters would
-need to be estimated; calibration and correlated sensor errors are not modeled.
-The normalized scores are *conditional on these assumptions* and should not
-be claimed as real-world confidence.
+It calculates the noisy sensor likelihood under each combination, accounts
+for clipped readings at 0 and 1 with Gaussian tail probabilities, then
+**marginalizes** (sums out) those nuisance settings to obtain the probability
+ranking over the eight source hypotheses. Missing observations contribute no
+likelihood term; an entirely missing snapshot abstains.
+
+For the one additional reading, the algorithm uses the *declared measurement
+instrument* noise SD 0.04. This is a fixed model assumption, not an event
+parameter or the true source. The model cannot access `source_intensity`,
+`decay_rate`, `noise_std`, `true_source`, or ideal source signals from the
+current simulated event.
+
+**Not a data-trained classifier:** This is Bayesian model-based inference
+with a *predefined* physical model family and priors. It still has inductive
+bias that Logistic Regression and Random Forest do not: the graph topology
+and expected exponential attenuation. Unlike the previous Known Params
+version, it is not given the event's actual physical settings.
+
+## Blind information-gain selection
+
+`Adaptive/sampler.py` includes `choose_next_zone_blind`. All dashboard
+and repeated-trial selection paths use this planner, which integrates over
+the predefined intensity/decay assumptions rather than passing the actual
+event settings. A classifier can supply source probabilities based solely
+on readings, while the graph estimator supplies its marginalized posterior.
+The selection policy estimates expected source entropy reduction from one
+hypothetical follow-up observation. Its uncertainty estimates are conditional
+on the assumed model and are not guaranteed to be calibrated.
 
 ## One additional measurement
 
@@ -139,7 +164,7 @@ system.
 
 ## Interpreting changes
 
-A larger training set or a parameter-aware likelihood can improve difficult
+A larger training set or marginalized graph likelihood might improve difficult
 cases but does not guarantee it. Report the differences as signed percentage
 points, compare all conditions and emphasize *where* models fail. The demo
 does not use one handpicked random seed as evidence of improvement. Keep the
