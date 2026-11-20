@@ -46,8 +46,12 @@ def condition_label(value):
 ARGMAX_LABEL = "Argmax Baseline"
 
 def method_label(value):
-    """Present the existing heuristic by its mathematical algorithm name."""
-    return ARGMAX_LABEL if value in ("Strongest sensor", "Strongest Sensor") else value
+    """Annotate audience-visible names without changing estimator lookup keys."""
+    if value in ("Strongest sensor", "Strongest Sensor"):
+        return ARGMAX_LABEL
+    if value in ("Logistic Regression", "Random Forest"):
+        return f"{value} (Robust)"
+    return value
 
 def graph_for_snapshot(snapshot):
     """Graph model uses known simulator parameters, never hidden-source truth."""
@@ -507,9 +511,10 @@ with demo_tab:
             predictions["Top Model Probability"] = predictions["Top Model Probability"].map(
                 lambda p: "N/A" if pd.isna(p) else f"{p:.1%}"
             )
+            predictions["Model"] = predictions["Model"].map(method_label)
             st.dataframe(predictions, hide_index=True, use_container_width=True)
             st.caption(
-                "Original = standard training; unmarked ML = sparse/noise-augmented training. "
+                "Original = standard training; Robust = sparse/noise-augmented training. "
                 "Probabilities are model-dependent estimates, not guarantees of correctness."
             )
         except (FileNotFoundError, ValueError) as error:
@@ -524,7 +529,7 @@ with demo_tab:
     with sample_left:
         demo_selector = st.selectbox(
             "Sampling model", ["Logistic Regression", "Random Forest", GRAPH_MODEL_NAME],
-            key="demo_selector",
+            key="demo_selector", format_func=method_label,
         )
         candidates = [zone for zone, reading in snap.readings.items() if reading is None]
         if snap.requested_zone is None and candidates:
@@ -589,6 +594,7 @@ with demo_tab:
                     "After": r["predicted_source_after"],
                 } for _, r in original.iterrows() if r["model"] != GRAPH_MODEL_NAME)
             comparison = display_zone_columns(pd.DataFrame(rows), ["Before", "After"])
+            comparison["Model"] = comparison["Model"].map(method_label)
             st.markdown("**Source Predictions Before and After Sampling**")
             st.dataframe(comparison, hide_index=True, use_container_width=True)
         except (FileNotFoundError, ValueError) as error:
@@ -613,7 +619,7 @@ with demo_tab:
             shown_methods = st.multiselect(
                 "Methods shown in chart and table", methods,
                 default=[name for name in preferred if name in methods],
-                key="demo_results_models",
+                key="demo_results_models", format_func=method_label,
             )
             if GRAPH_MODEL_NAME not in methods:
                 st.info(
@@ -629,7 +635,7 @@ with demo_tab:
             fig = go.Figure()
             for model_name, group in subset.groupby("model", sort=False):
                 fig.add_trace(go.Bar(
-                    name=model_name, x=group["strategy"],
+                    name=method_label(model_name), x=group["strategy"],
                     y=group["accuracy"] * 100,
                     text=group["accuracy"].map(lambda v: f"{v:.1%}"),
                     textposition="outside",
@@ -666,6 +672,7 @@ with demo_tab:
                 "Model", "Sampling Strategy", "Trials", "Accuracy",
                 "Mean Graph Error (Edges)", "Additional Measurements",
             ]
+            metrics_table["Model"] = metrics_table["Model"].map(method_label)
             if "missing_source_accuracy" in subset:
                 metrics_table["Source Unobserved Accuracy"] = subset[
                     "missing_source_accuracy"
@@ -697,7 +704,7 @@ with live:
             ml_cols = st.columns(2)
             for column, (_, result) in zip(ml_cols, live_ml_predictions.iterrows()):
                 zone = result["predicted_source"]
-                column.metric(result["model"], zone_label(zone))
+                column.metric(method_label(result["model"]), zone_label(zone))
         except (FileNotFoundError, ValueError) as exc:
             st.error(f"ML model integration: {exc}")
     l, r = st.columns([1.75, 1], gap="large")
@@ -753,7 +760,7 @@ with live:
                 st.rerun()
             selector_model = st.selectbox(
                 "Information-gain selector", ["Logistic Regression", "Random Forest", GRAPH_MODEL_NAME],
-                key="adaptive_selector_model",
+                key="adaptive_selector_model", format_func=method_label,
             )
             if st.button("AI selects next zone", type="primary", use_container_width=True):
                 try:
@@ -871,6 +878,7 @@ with models_tab:
                 lambda p: "N/A" if pd.isna(p) else f"{p:.1%}"
             )
             display_predictions.columns = ["Model", "Predicted Source", "Top Model Probability (Not Guaranteed)"]
+            display_predictions["Model"] = display_predictions["Model"].map(method_label)
             display_predictions["Predicted Source"] = display_predictions["Predicted Source"].map(zone_label)
             st.dataframe(display_predictions, hide_index=True, use_container_width=True)
             if snap.requested_zone is not None:
@@ -879,6 +887,7 @@ with models_tab:
                     on="model", suffixes=("_before", "_after")
                 )
                 before_after.columns = ["Model", "Before Additional Sample", "After Additional Sample"]
+                before_after["Model"] = before_after["Model"].map(method_label)
                 before_after = display_zone_columns(before_after, ["Before Additional Sample", "After Additional Sample"])
                 st.caption(f"Prediction comparison after sampling {zone_label(snap.requested_zone)}")
                 st.dataframe(before_after, hide_index=True, use_container_width=True)
@@ -956,6 +965,7 @@ with adaptive_tab:
     else:
         summary = summarize_comparison(matched)
         results_view = summary.copy()
+        results_view["model"] = results_view["model"].map(method_label)
         results_view["accuracy"] = results_view["accuracy"].map(lambda a: f"{a:.1%}")
         results_view["mean_graph_error"] = results_view["mean_graph_error"].map(
             lambda x: "N/A" if pd.isna(x) else f"{x:.3f}"
@@ -991,7 +1001,7 @@ with adaptive_tab:
         }
         for name, group in summary.groupby("model", sort=False):
             fig.add_trace(go.Bar(
-                name=name,
+                name=method_label(name),
                 x=[label_map[x] for x in group["strategy"]],
                 y=group["accuracy"] * 100,
                 text=[f"{a:.1%}" for a in group["accuracy"]],
@@ -1012,7 +1022,7 @@ with adaptive_tab:
         for name, group in summary.groupby("model", sort=False):
             rates = dict(zip(group["strategy"], group["accuracy"]))
             st.caption(
-                f"{name}: information gain vs. random = "
+                f"{method_label(name)}: information gain vs. random = "
                 f"{100 * (rates['information_gain'] - rates['random']):+.1f} "
                 f"percentage points. A negative value means random sampling did better."
             )
