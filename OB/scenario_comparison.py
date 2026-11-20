@@ -126,3 +126,53 @@ def scenario_takeaways(
         "before/after table and repeated trials for that question."
     )
     return sentences
+
+
+def sampling_takeaways(comparison: pd.DataFrame, *, reveal: bool = False) -> list[str]:
+    """Explain the *same-event* before/after measurement comparison.
+
+    Unlike scenario_takeaways(), this function compares predictions against
+    one unchanged true source. Correctness and graph errors may be mentioned
+    only when the reveal-gated scoring columns are present.
+    """
+    required = {"Before", "After", "Model"}
+    if not required.issubset(comparison.columns):
+        raise ValueError("Sampling comparison needs Model, Before and After")
+    count = len(comparison)
+    changed = int((comparison["Before"] != comparison["After"]).sum())
+    notes = [
+        f"{changed} of {count} methods changed their predicted zone after "
+        "the additional reading."
+    ]
+    if not reveal:
+        notes.append(
+            "Reveal True Source to show which changed predictions actually "
+            "improved localization."
+        )
+        return notes
+    required_scores = {
+        "Correct Before?", "Correct After?", "Error Reduction (edges)",
+    }
+    if not required_scores.issubset(comparison.columns):
+        raise ValueError("Revealed sampling comparison is missing scoring columns")
+    before_hits = int((comparison["Correct Before?"] == "Yes").sum())
+    after_hits = int((comparison["Correct After?"] == "Yes").sum())
+    notes.append(
+        f"Exact-source matches changed from {before_hits}/{count} to "
+        f"{after_hits}/{count} ({after_hits - before_hits:+d} methods)."
+    )
+    differences = pd.to_numeric(
+        comparison["Error Reduction (edges)"], errors="coerce"
+    )
+    nearer = int((differences > 0).sum())
+    farther = int((differences < 0).sum())
+    unchanged = int((differences == 0).sum())
+    notes.append(
+        f"Graph-distance error improved for {nearer} methods, "
+        f"worsened for {farther}, and stayed unchanged for {unchanged}."
+    )
+    notes.append(
+        "This is one simulated event; compare matched repeated trials "
+        "before claiming a general benefit over random sampling."
+    )
+    return notes
