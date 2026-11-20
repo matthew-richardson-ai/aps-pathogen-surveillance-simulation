@@ -19,6 +19,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from Localization.baselines import strongest_sensor
+from Localization.robust_training import augment_sparse_training
+from Localization.graph_likelihood import GRAPH_MODEL_NAME, graph_prediction
 from Simulation.facility import build_facility
 
 ZONES = tuple(f"zone_{i}" for i in range(1, 9))
@@ -36,6 +38,8 @@ class ModelArtifacts:
     test_count: int
     scores: pd.DataFrame
     test_predictions: pd.DataFrame
+    augmented_train_count: int = 0
+    reference_models: dict[str, Pipeline] | None = None
 
 
 def default_dataset_path() -> Path:
@@ -84,7 +88,67 @@ def _baseline_predict(frame: pd.DataFrame) -> list[str | None]:
     return guesses
 
 
-def train_models(dataset_path: str | Path | None = None) -> ModelArtifacts:
+def _new_classifiers() -> dict[str, Pipeline]:
+    """Independent pipelines; every experiment receives fresh estimators."""
+    return {
+        "Logistic Regression": Pipeline([
+            ("fill", SimpleImputer(strategy="constant", fill_value=0.0)),
+            ("scale", StandardScaler()),
+            ("model", LogisticRegression(max_iter=1200, random_state=42)),
+        ]),
+        "Random Forest": Pipeline([
+            ("fill", SimpleImputer(strategy="constant", fill_value=0.0)),
+            ("model", RandomForestClassifier(
+                n_estimators=120, random_state=42, n_jobs=-1,
+            )),
+        ]),
+    }
+
+
+def _graph_test_predictions(testing: pd.DataFrame) -> list[str | None] | None:
+    """Graph likelihood can be scored only when held-out metadata is present.
+
+    This uses the true *simulation parameters*, not the true source label.
+    Crucially, it has more information than the data-only ML classifiers.
+    The distinction is annotated throughout the presentation.
+    """
+    metadata = {"source_intensity", "decay_rate", "noise_std"}
+    if not metadata.issubset(testing.columns):
+        return None
+    predictions = []
+    for _, record in testing.iterrows():
+        observed = {
+            zone: None if pd.isna(record[f"{zone}_reading"])
+            else float(record[f"{zone}_reading"])
+            for zone in ZONES
+        }
+        guess, _ = graph_prediction(
+            observed,
+            source_intensity=float(record["source_intensity"]),
+            decay_rate=float(record["decay_rate"]),
+            noise_std=float(record["noise_std"]),
+        )
+        predictions.append(guess)
+    return predictions
+
+
+def train_models(
+    dataset_path: str | Path | None = None,
+    *,
+    augmentation_copies: int = 3,
+) -> ModelArtifacts:
+    """Fit robust ML models using training rows only; preserve a true control.
+
+    The reference classifiers are trained on the untouched training split.
+    The robust models receive those rows plus sparse, noise-perturbed *training*
+    views. Both are scored on the same unchanged held-out test partition.
+    Validation rows, if supplied, never become training examples.
+
+    The UI keeps the recognizable names "Logistic Regression" and
+    "Random Forest" for robust models, with "(Original)" references shown
+    side by side in held-out evaluation. No model is selected based on test
+    performance, and no performance improvement is presumed.
+    """
     path = Path(dataset_path) if dataset_path is not None else default_dataset_path()
     frame = pd.read_csv(path)
     required = set(FEATURE_COLUMNS) | {"true_source_node", "split", "run_id"}
@@ -103,35 +167,37 @@ def train_models(dataset_path: str | Path | None = None) -> ModelArtifacts:
     if "group_id" in frame:
         if set(training["group_id"]) & set(testing["group_id"]):
             raise ValueError("Group leakage between train and test partitions")
+        validation = frame[frame["split"] == "validation"]
+        if set(training["group_id"]) & set(validation["group_id"]):
+            raise ValueError("Group leakage between train and validation partitions")
 
     X_train, X_test = _features(training), _features(testing)
     y_train = training["true_source_node"].astype(str)
 
-    models = {
-        "Logistic Regression": Pipeline([
-            ("fill", SimpleImputer(strategy="constant", fill_value=0.0)),
-            ("scale", StandardScaler()),
-            ("model", LogisticRegression(max_iter=1200, random_state=42)),
-        ]),
-        "Random Forest": Pipeline([
-            ("fill", SimpleImputer(strategy="constant", fill_value=0.0)),
-            ("model", RandomForestClassifier(
-                n_estimators=120, random_state=42, n_jobs=-1,
-            )),
-        ]),
-    }
-    for estimator in models.values():
+    # Reference controls use exactly the previous dataset representation.
+    reference_models = _new_classifiers()
+    for estimator in reference_models.values():
         estimator.fit(X_train, y_train)
 
-    graph = build_facility()
-    results = []
-    predictions = [("Strongest sensor", _baseline_predict(testing))]
-    predictions.extend(
-        (name, estimator.predict(X_test).tolist())
-        for name, estimator in models.items()
+    augmented_x, augmented_y = augment_sparse_training(
+        X_train, y_train, copies=augmentation_copies, seed=4240
     )
-    truths = testing["true_source_node"].astype(str).tolist()
+    models = _new_classifiers()
+    for estimator in models.values():
+        estimator.fit(augmented_x, augmented_y)
 
+    graph = build_facility()
+    original = [(f"{name} (Original)", estimator.predict(X_test).tolist())
+                for name, estimator in reference_models.items()]
+    robust = [(name, estimator.predict(X_test).tolist())
+              for name, estimator in models.items()]
+    predictions = [("Strongest sensor", _baseline_predict(testing)), *original, *robust]
+    graph_guesses = _graph_test_predictions(testing)
+    if graph_guesses is not None:
+        predictions.append((GRAPH_MODEL_NAME, graph_guesses))
+
+    truths = testing["true_source_node"].astype(str).tolist()
+    results = []
     for model_name, guesses in predictions:
         for (_, record), truth, guess in zip(testing.iterrows(), truths, guesses):
             error = (
@@ -141,6 +207,7 @@ def train_models(dataset_path: str | Path | None = None) -> ModelArtifacts:
             results.append({
                 "run_id": str(record["run_id"]),
                 "scenario_type": str(record.get("scenario_type", "unknown")),
+                "observed_sensors": sum(pd.notna(record[f"{z}_reading"]) for z in ZONES),
                 "model": model_name,
                 "true_source": truth,
                 "predicted_source": guess,
@@ -161,6 +228,8 @@ def train_models(dataset_path: str | Path | None = None) -> ModelArtifacts:
         test_count=len(testing),
         scores=scores,
         test_predictions=test_predictions,
+        augmented_train_count=len(augmented_x),
+        reference_models=reference_models,
     )
 
 
