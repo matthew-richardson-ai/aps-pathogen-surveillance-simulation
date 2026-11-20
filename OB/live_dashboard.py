@@ -655,11 +655,13 @@ with live:
     st.markdown('<div class="aps-notice">The green ring indicates the Argmax Baseline prediction: the zone with the highest observed sensor reading. The purple ring identifies the additional sample.</div>', unsafe_allow_html=True)
     st.write("")
     prediction = predict_baseline(snap.readings)
-    metrics = st.columns(4)
+    graph_guess, _ = graph_for_snapshot(snap)
+    metrics = st.columns(5)
     metrics[0].metric("Available readings", f"{sum(x is not None for x in snap.readings.values())}/8")
     metrics[1].metric(ARGMAX_LABEL, zone_label(prediction))
-    metrics[2].metric("Sensor noise", f"{params.noise_std:.2f}")
-    metrics[3].metric("Missing probability", f"{params.missing_rate:.0%}")
+    metrics[2].metric("Graph Likelihood", zone_label(graph_guess))
+    metrics[3].metric("Sensor noise", f"{params.noise_std:.2f}")
+    metrics[4].metric("Missing probability", f"{params.missing_rate:.0%}")
     if st.session_state.get("ml_enabled", False):
         try:
             live_ml_predictions = predict_models(load_ml_artifacts(), snap.readings)
@@ -721,13 +723,12 @@ with live:
                 st.session_state.active_snapshot = sample_one_more(snap, target)
                 st.rerun()
             selector_model = st.selectbox(
-                "Information-gain selector", ["Logistic Regression", "Random Forest"],
+                "Information-gain selector", ["Logistic Regression", "Random Forest", GRAPH_MODEL_NAME],
                 key="adaptive_selector_model",
             )
             if st.button("AI selects next zone", type="primary", use_container_width=True):
                 try:
-                    trained = load_ml_artifacts()
-                    prior = source_prior(trained.models[selector_model], snap.readings)
+                    prior = sampling_prior(selector_model, snap)
                     choice = choose_next_zone(
                         build_facility(), snap.readings, prior,
                         source_intensity=params.source_intensity,
@@ -740,7 +741,8 @@ with live:
                             "zone": choice.zone,
                             "gain": choice.expected_gain_bits,
                         }
-                        st.session_state.ml_enabled = True
+                        if selector_model != GRAPH_MODEL_NAME:
+                            st.session_state.ml_enabled = True
                         st.rerun()
                 except (FileNotFoundError, ValueError) as error:
                     st.error(f"Adaptive selection failed: {error}")
