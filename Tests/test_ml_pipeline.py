@@ -50,9 +50,13 @@ def test_train_and_predict(tmp_path):
     assert artifacts.train_count == 160
     assert artifacts.test_count == 40
     assert set(artifacts.scores.model) == {
-        "Strongest sensor", "Logistic Regression", "Random Forest",
+        "Strongest sensor",
+        "Logistic Regression (Original)", "Random Forest (Original)",
+        "Logistic Regression", "Random Forest",
     }
-    assert len(artifacts.test_predictions) == 120
+    assert len(artifacts.test_predictions) == 200
+    assert artifacts.augmented_train_count == 640
+    assert set(artifacts.reference_models) == {"Logistic Regression", "Random Forest"}
     assert artifacts.scores.trials.eq(40).all()
     live = {zone: 0.3 for zone in ZONES}
     live["zone_4"] = None
@@ -70,3 +74,35 @@ def test_reject_train_test_group_leakage(tmp_path):
     frame.to_csv(path, index=False)
     with pytest.raises(ValueError, match="Group leakage"):
         train_models(path)
+
+
+def test_model_based_scores_require_known_simulator_settings(tmp_path):
+    """Only data rows containing scenario parameters get graph-likelihood scores."""
+    from Localization.graph_likelihood import GRAPH_MODEL_NAME
+    path = create_dataset(tmp_path)
+    original = train_models(path, augmentation_copies=0)
+    assert GRAPH_MODEL_NAME not in set(original.scores.model)
+    assert original.augmented_train_count == original.train_count
+
+    frame = pd.read_csv(path)
+    frame["noise_std"] = 0.08
+    frame["source_intensity"] = 1.0
+    frame["decay_rate"] = 0.65
+    frame.to_csv(path, index=False)
+    with_graph = train_models(path, augmentation_copies=0)
+    assert GRAPH_MODEL_NAME in set(with_graph.scores.model)
+    assert len(with_graph.test_predictions) == 240
+
+
+def test_training_augmentation_never_uses_holdout_to_fit(tmp_path):
+    """An arbitrary test label edit cannot change fitted robust coefficients."""
+    path = create_dataset(tmp_path)
+    original = train_models(path, augmentation_copies=1)
+    frame = pd.read_csv(path)
+    frame.loc[frame["split"] == "test", "true_source_node"] = "zone_8"
+    frame.to_csv(path, index=False)
+    altered = train_models(path, augmentation_copies=1)
+    assert np.allclose(
+        original.models["Logistic Regression"].named_steps["model"].coef_,
+        altered.models["Logistic Regression"].named_steps["model"].coef_,
+    )
