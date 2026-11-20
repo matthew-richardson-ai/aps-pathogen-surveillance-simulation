@@ -13,7 +13,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 
-from Adaptive.sampler import source_prior, choose_next_zone
+from Adaptive.sampler import source_prior, choose_next_zone_blind
 from Localization.ml_pipeline import ModelArtifacts, reading_features
 from Localization.graph_likelihood import GRAPH_MODEL_NAME, graph_prediction, source_posterior
 from Simulation.facility import build_facility
@@ -60,12 +60,7 @@ def compare_sampling_policies(
             # infer source probabilities from observed readings alone.
             if model_name == GRAPH_MODEL_NAME:
                 estimator = None
-                prior = source_posterior(
-                    initial.readings,
-                    source_intensity=config.source_intensity,
-                    decay_rate=config.decay_rate,
-                    noise_std=config.noise_std,
-                )
+                prior = source_posterior(initial.readings)
             elif model_name in artifacts.models:
                 estimator = artifacts.models[model_name]
                 prior = source_prior(estimator, initial.readings)
@@ -76,11 +71,10 @@ def compare_sampling_policies(
                 prior = source_prior(estimator, initial.readings)
             else:
                 raise ValueError(f"Unknown localization method: {model_name}")
-            choice = choose_next_zone(
-                graph, initial.readings, prior,
-                source_intensity=config.source_intensity,
-                decay_rate=config.decay_rate,
-                sample_noise_std=0.04,
+            # The selector has no access to the actual event's nuisance
+            # parameters. Plausible values are marginalized in its planner.
+            choice = choose_next_zone_blind(
+                graph, initial.readings, prior, sample_noise_std=0.04,
             )
             if choice is None:
                 raise ValueError("No candidate for information-gain sampling")
@@ -93,9 +87,6 @@ def compare_sampling_policies(
                 if model_name == GRAPH_MODEL_NAME:
                     predicted, _ = graph_prediction(
                         state.readings,
-                        source_intensity=config.source_intensity,
-                        decay_rate=config.decay_rate,
-                        noise_std=config.noise_std,
                         requested_zone=state.requested_zone,
                     )
                 else:
