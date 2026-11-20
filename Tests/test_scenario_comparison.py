@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from OB.live_engine import Scenario, simulate, sample_one_more
-from OB.scenario_comparison import comparison_table, scenario_takeaways
+from OB.scenario_comparison import comparison_table, scenario_takeaways, sampling_takeaways
 
 
 def example_events():
@@ -86,3 +86,23 @@ def test_two_reveal_buttons_use_the_same_pre_render_callback():
         for node in button_nodes
     )
     assert "st.session_state.previous_snapshot = prior_snapshot" in source
+
+
+def test_sampling_takeaways_report_exact_improvement_only_if_revealed():
+    hidden = pd.DataFrame([
+        {"Model": "A", "Before": "Zone 8", "After": "Zone 5"},
+        {"Model": "B", "Before": "Zone 5", "After": "Zone 5"},
+        {"Model": "C", "Before": "Zone 2", "After": "Zone 2"},
+    ])
+    lines = sampling_takeaways(hidden)
+    assert "1 of 3" in lines[0]
+    assert any("Reveal True Source" in line for line in lines)
+    assert all("correct" not in line.lower() for line in lines)
+
+    revealed = hidden.copy()
+    revealed["Correct Before?"] = ["No", "Yes", "No"]
+    revealed["Correct After?"] = ["Yes", "Yes", "No"]
+    revealed["Error Reduction (edges)"] = [3, 0, 0]
+    scored = sampling_takeaways(revealed, reveal=True)
+    assert any("from 1/3 to 2/3" in line for line in scored)
+    assert any("improved for 1 methods" in line for line in scored)
