@@ -53,8 +53,9 @@ def test_train_and_predict(tmp_path):
         "Strongest sensor",
         "Logistic Regression (Original)", "Random Forest (Original)",
         "Logistic Regression", "Random Forest",
+        "Graph-Aware Bayesian Inference",
     }
-    assert len(artifacts.test_predictions) == 200
+    assert len(artifacts.test_predictions) == 240
     assert artifacts.augmented_train_count == 640
     assert set(artifacts.reference_models) == {"Logistic Regression", "Random Forest"}
     assert artifacts.scores.trials.eq(40).all()
@@ -76,22 +77,31 @@ def test_reject_train_test_group_leakage(tmp_path):
         train_models(path)
 
 
-def test_model_based_scores_require_known_simulator_settings(tmp_path):
-    """Only data rows containing scenario parameters get graph-likelihood scores."""
+def test_graph_inference_does_not_need_simulator_setting_columns(tmp_path):
+    """Graph estimates are computed from readings, not hidden event metadata."""
     from Localization.graph_likelihood import GRAPH_MODEL_NAME
     path = create_dataset(tmp_path)
-    original = train_models(path, augmentation_copies=0)
-    assert GRAPH_MODEL_NAME not in set(original.scores.model)
-    assert original.augmented_train_count == original.train_count
+    model = train_models(path, augmentation_copies=0)
+    assert GRAPH_MODEL_NAME in set(model.scores.model)
+    assert model.augmented_train_count == model.train_count
+    assert len(model.test_predictions) == 240
 
+    # Poison only held-out simulator metadata; no inference may change.
     frame = pd.read_csv(path)
-    frame["noise_std"] = 0.08
-    frame["source_intensity"] = 1.0
-    frame["decay_rate"] = 0.65
+    frame["source_intensity"] = 100.0
+    frame["decay_rate"] = -100.0
+    frame["noise_std"] = 200.0
     frame.to_csv(path, index=False)
-    with_graph = train_models(path, augmentation_copies=0)
-    assert GRAPH_MODEL_NAME in set(with_graph.scores.model)
-    assert len(with_graph.test_predictions) == 240
+    new = train_models(path, augmentation_copies=0)
+    before = model.test_predictions.loc[
+        model.test_predictions.model == GRAPH_MODEL_NAME,
+        "predicted_source",
+    ].tolist()
+    after = new.test_predictions.loc[
+        new.test_predictions.model == GRAPH_MODEL_NAME,
+        "predicted_source",
+    ].tolist()
+    assert before == after
 
 
 def test_training_augmentation_never_uses_holdout_to_fit(tmp_path):
