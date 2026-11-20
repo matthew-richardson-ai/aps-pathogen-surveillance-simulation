@@ -18,7 +18,7 @@ if str(ROOT) not in sys.path:
 
 from Simulation.facility import build_facility
 from OB.prediction_scoring import score_current_predictions, score_before_after
-from OB.scenario_comparison import comparison_table, scenario_takeaways
+from OB.scenario_comparison import comparison_table, scenario_takeaways, sampling_takeaways
 from live_engine import Scenario, simulate, sample_one_more, predict_baseline, baseline_error, batch_baseline
 from Localization.ml_pipeline import train_models, predict_models, reading_features
 from Localization.graph_likelihood import GRAPH_MODEL_NAME, graph_prediction, source_posterior
@@ -649,6 +649,11 @@ with demo_tab:
             comparison["Model"] = comparison["Model"].map(method_label)
             st.markdown("**Source Predictions Before and After Sampling**")
             st.dataframe(comparison, hide_index=True, use_container_width=True)
+            st.markdown("**Quick takeaway — impact of this additional reading**")
+            for takeaway in sampling_takeaways(
+                comparison, reveal=st.session_state.demo_reveal,
+            ):
+                st.write("• " + takeaway)
             if st.session_state.demo_reveal:
                 st.caption("Positive Error Reduction means a prediction moved closer; negative means farther away.")
             else:
