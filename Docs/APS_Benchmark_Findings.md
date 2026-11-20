@@ -1,5 +1,18 @@
 # APS Benchmark Findings — Measured Synthetic Results
 
+> **HISTORICAL BENCHMARK — PREVIOUS ALGORITHM (November 19, 2026)**
+>
+> The Graph-Aware Likelihood numbers in this document came from the old
+> **Known Params** algorithm. That method was provided the true simulation
+> intensity, decay and noise parameters. It has now been replaced in the
+> Streamlit demonstration by **Graph-Aware Bayesian Inference**, which does
+> *not* receive those parameters and instead marginalizes over a predefined
+> parameter grid. **Do not quote the old graph-model accuracy percentages
+> as current results.** Rerun `python Scripts/prepare_demo_results.py` and
+> use the newly generated `Results/Demo/` CSV files to evaluate the revised
+> blind system. The old measurements are retained solely as historical records.
+>
+
 **Evaluation source:** GitHub Actions `APS Robustness Benchmark` run
 `44646424256`, commit `61a7eabe129286685ea4d6abebf68163ae09561f`,
 executed November 19, 2026 (US Central) / November 20 UTC.
