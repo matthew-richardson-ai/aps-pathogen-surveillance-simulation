@@ -17,10 +17,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from Simulation.facility import build_facility
+from OB.prediction_scoring import score_current_predictions, score_before_after
 from live_engine import Scenario, simulate, sample_one_more, predict_baseline, baseline_error, batch_baseline
 from Localization.ml_pipeline import train_models, predict_models, reading_features
 from Localization.graph_likelihood import GRAPH_MODEL_NAME, graph_prediction, source_posterior
-from Adaptive.sampler import source_prior, choose_next_zone
+from Adaptive.sampler import source_prior, choose_next_zone_blind
 from OB.adaptive_experiments import compare_sampling_policies, summarize_comparison
 from facility_3d import facility_3d_plot
 
@@ -54,31 +55,19 @@ def method_label(value):
     return value
 
 def graph_for_snapshot(snapshot):
-    """Graph model uses known simulator parameters, never hidden-source truth."""
-    cfg = snapshot.parameters
-    return graph_prediction(
-        snapshot.readings,
-        source_intensity=cfg.source_intensity,
-        decay_rate=cfg.decay_rate,
-        noise_std=cfg.noise_std,
-        requested_zone=snapshot.requested_zone,
-    )
+    """Infer from observations alone, never using true scenario parameters."""
+    return graph_prediction(snapshot.readings, requested_zone=snapshot.requested_zone)
 
 
 def sampling_prior(method, snapshot):
     """Use either learned ML probabilities or the graph likelihood posterior.
 
     Only robust ML models (not their original controls) drive sampling.
-    The graph-aware model uses the configured simulator physics assumptions.
+    Graph-aware inference marginalizes unknown nuisance parameters.
     """
     if method == GRAPH_MODEL_NAME:
-        cfg = snapshot.parameters
         return source_posterior(
-            snapshot.readings,
-            source_intensity=cfg.source_intensity,
-            decay_rate=cfg.decay_rate,
-            noise_std=cfg.noise_std,
-            requested_zone=snapshot.requested_zone,
+            snapshot.readings, requested_zone=snapshot.requested_zone,
         )
     return source_prior(load_ml_artifacts().models[method], snapshot.readings)
 
@@ -86,7 +75,7 @@ def sampling_prior(method, snapshot):
 def all_current_predictions(artifacts, snapshot):
     """Compare all methods on exactly the same current observation snapshot.
 
-    The Argmax heuristic is shown separately in the facility metrics.
+    The Argmax heuristic also appears in the model comparison.
     Original ML variants are controls; robust variants are actively used.
     All-missing views abstain rather than guessing a location.
     """
@@ -117,7 +106,12 @@ def all_current_predictions(artifacts, snapshot):
             max(graph_scores.values()) if graph_guess is not None else float("nan")
         ),
     }])
-    return pd.concat([frame, graph_row], ignore_index=True)
+    baseline_row = pd.DataFrame([{
+        "model": ARGMAX_LABEL,
+        "predicted_source": predict_baseline(observations),
+        "max_class_probability": float("nan"),
+    }])
+    return pd.concat([baseline_row, frame, graph_row], ignore_index=True)
 
 
 def display_zone_columns(frame, names):
@@ -448,8 +442,11 @@ with demo_tab:
         st.metric("Available sensor readings", f"{available} / 8")
         st.metric(ARGMAX_LABEL, zone_label(predict_baseline(snap.readings)))
         graph_guess, graph_probs = graph_for_snapshot(snap)
-        st.metric("Graph-Aware Likelihood", zone_label(graph_guess))
-        st.caption("Uses known simulated decay, signal intensity and noise; not a trained ML model.")
+        st.metric("Graph-Aware Bayesian Inference", zone_label(graph_guess))
+        st.caption(
+            "Derives its source estimate from sensor readings, averaging over "
+            "plausible intensity, decay and noise settings; actual values stay hidden."
+        )
         top_sources = sorted(graph_probs.items(), key=lambda item: item[1], reverse=True)[:3]
         st.caption(
             "Top candidate zones: " +
@@ -484,12 +481,13 @@ with demo_tab:
         "**Argmax** selects the strongest available sensor. **Logistic Regression** "
         "and **Random Forest** learn from observed values and missingness; their "
         "robust versions also train on deliberately sparse and noisy views. "
-        "**Graph-Aware Likelihood** scores all eight candidate sources using "
-        "the known simulated signal-decay and noise settings."
+        "**Graph-Aware Bayesian Inference** scores all candidate sources "
+        "while integrating over unknown signal and noise settings."
     )
     st.caption(
-        "Graph-Aware Likelihood has additional simulator-parameter information "
-        "not provided to the trained models. Compare its results with that advantage in mind."
+        "All methods are blind to the true source. Graph inference uses the "
+        "known facility connectivity and an assumed signal family, but not "
+        "the actual scenario intensity, decay, or noise settings."
     )
     if not st.session_state.get("ml_enabled", False):
         if st.button("Train and Compare Models", key="demo_train_models", type="primary"):
@@ -503,6 +501,9 @@ with demo_tab:
         try:
             artifacts = load_ml_artifacts()
             predictions = all_current_predictions(artifacts, snap)
+            # Ground truth is only consulted for display *after* reveal.
+            if st.session_state.demo_reveal:
+                predictions = score_current_predictions(predictions, snap.true_source)
             predictions = predictions.rename(columns={
                 "model": "Model", "predicted_source": "Predicted Source",
                 "max_class_probability": "Top Model Probability",
@@ -513,9 +514,19 @@ with demo_tab:
             )
             predictions["Model"] = predictions["Model"].map(method_label)
             st.dataframe(predictions, hide_index=True, use_container_width=True)
+            if st.session_state.demo_reveal:
+                st.caption(
+                    "Graph Distance counts shortest-path edges from the predicted zone "
+                    "to the revealed source; zero indicates an exact match."
+                )
+            else:
+                st.caption(
+                    "Reveal True Source above to see Correct? and Graph Distance "
+                    "without exposing the answer to the algorithms."
+                )
             st.caption(
                 "Original = standard training; Robust = sparse/noise-augmented training. "
-                "Probabilities are model-dependent estimates, not guarantees of correctness."
+                "Model probabilities are not guaranteed confidence values."
             )
         except (FileNotFoundError, ValueError) as error:
             st.error(f"Model comparison unavailable: {error}")
@@ -536,10 +547,8 @@ with demo_tab:
             if st.button("Select and Measure Next Zone", type="primary", key="demo_sample"):
                 try:
                     prior = sampling_prior(demo_selector, snap)
-                    choice = choose_next_zone(
+                    choice = choose_next_zone_blind(
                         build_facility(), snap.readings, prior,
-                        source_intensity=params.source_intensity,
-                        decay_rate=params.decay_rate,
                     )
                     if choice is not None:
                         st.session_state.active_snapshot = sample_one_more(snap, choice.zone)
@@ -592,11 +601,19 @@ with demo_tab:
                 rows.extend({
                     "Model": r["model"], "Before": r["predicted_source_before"],
                     "After": r["predicted_source_after"],
-                } for _, r in original.iterrows() if r["model"] != GRAPH_MODEL_NAME)
-            comparison = display_zone_columns(pd.DataFrame(rows), ["Before", "After"])
+                } for _, r in original.iterrows()
+                  if r["model"] not in (GRAPH_MODEL_NAME, ARGMAX_LABEL))
+            comparison = pd.DataFrame(rows)
+            if st.session_state.demo_reveal:
+                comparison = score_before_after(comparison, snap.true_source)
+            comparison = display_zone_columns(comparison, ["Before", "After"])
             comparison["Model"] = comparison["Model"].map(method_label)
             st.markdown("**Source Predictions Before and After Sampling**")
             st.dataframe(comparison, hide_index=True, use_container_width=True)
+            if st.session_state.demo_reveal:
+                st.caption("Positive Error Reduction means a prediction moved closer; negative means farther away.")
+            else:
+                st.caption("Reveal True Source to see exact correctness and before/after graph distance.")
         except (FileNotFoundError, ValueError) as error:
             st.error(f"Prediction comparison unavailable: {error}")
 
@@ -765,10 +782,8 @@ with live:
             if st.button("AI selects next zone", type="primary", use_container_width=True):
                 try:
                     prior = sampling_prior(selector_model, snap)
-                    choice = choose_next_zone(
+                    choice = choose_next_zone_blind(
                         build_facility(), snap.readings, prior,
-                        source_intensity=params.source_intensity,
-                        decay_rate=params.decay_rate,
                     )
                     if choice is not None:
                         st.session_state.active_snapshot = sample_one_more(snap, choice.zone)
