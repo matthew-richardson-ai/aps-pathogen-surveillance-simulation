@@ -18,7 +18,8 @@ if str(ROOT) not in sys.path:
 
 from Simulation.facility import build_facility
 from live_engine import Scenario, simulate, sample_one_more, predict_baseline, baseline_error, batch_baseline
-from Localization.ml_pipeline import train_models, predict_models
+from Localization.ml_pipeline import train_models, predict_models, reading_features
+from Localization.graph_likelihood import GRAPH_MODEL_NAME, graph_prediction, source_posterior
 from Adaptive.sampler import source_prior, choose_next_zone
 from OB.adaptive_experiments import compare_sampling_policies, summarize_comparison
 from facility_3d import facility_3d_plot
@@ -47,6 +48,73 @@ ARGMAX_LABEL = "Argmax Baseline"
 def method_label(value):
     """Present the existing heuristic by its mathematical algorithm name."""
     return ARGMAX_LABEL if value in ("Strongest sensor", "Strongest Sensor") else value
+
+def graph_for_snapshot(snapshot):
+    """Graph model uses known simulator parameters, never hidden-source truth."""
+    cfg = snapshot.parameters
+    return graph_prediction(
+        snapshot.readings,
+        source_intensity=cfg.source_intensity,
+        decay_rate=cfg.decay_rate,
+        noise_std=cfg.noise_std,
+        requested_zone=snapshot.requested_zone,
+    )
+
+
+def sampling_prior(method, snapshot):
+    """Use either learned ML probabilities or the graph likelihood posterior.
+
+    Only robust ML models (not their original controls) drive sampling.
+    The graph-aware model uses the configured simulator physics assumptions.
+    """
+    if method == GRAPH_MODEL_NAME:
+        cfg = snapshot.parameters
+        return source_posterior(
+            snapshot.readings,
+            source_intensity=cfg.source_intensity,
+            decay_rate=cfg.decay_rate,
+            noise_std=cfg.noise_std,
+            requested_zone=snapshot.requested_zone,
+        )
+    return source_prior(load_ml_artifacts().models[method], snapshot.readings)
+
+
+def all_current_predictions(artifacts, snapshot):
+    """Compare all methods on exactly the same current observation snapshot.
+
+    The Argmax heuristic is shown separately in the facility metrics.
+    Original ML variants are controls; robust variants are actively used.
+    All-missing views abstain rather than guessing a location.
+    """
+    observations = snapshot.readings
+    frame = predict_models(artifacts, observations)
+    missing_all = all(value is None for value in observations.values())
+    if artifacts.reference_models:
+        controls = []
+        for label, estimator in artifacts.reference_models.items():
+            if missing_all:
+                guess, probability = None, float("nan")
+            else:
+                probabilities = estimator.predict_proba(reading_features(observations))[0]
+                index = int(probabilities.argmax())
+                guess, probability = str(estimator.classes_[index]), float(probabilities[index])
+            controls.append({
+                "model": f"{label} (Original)",
+                "predicted_source": guess,
+                "max_class_probability": probability,
+            })
+        frame = pd.concat([frame, pd.DataFrame(controls)], ignore_index=True)
+
+    graph_guess, graph_scores = graph_for_snapshot(snapshot)
+    graph_row = pd.DataFrame([{
+        "model": GRAPH_MODEL_NAME,
+        "predicted_source": graph_guess,
+        "max_class_probability": (
+            max(graph_scores.values()) if graph_guess is not None else float("nan")
+        ),
+    }])
+    return pd.concat([frame, graph_row], ignore_index=True)
+
 
 def display_zone_columns(frame, names):
     display = frame.copy()
