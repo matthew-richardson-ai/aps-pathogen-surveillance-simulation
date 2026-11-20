@@ -621,95 +621,94 @@ with demo_tab:
     summary_path = ROOT / "Results" / "Demo" / "sampling_summary.csv"
     if summary_path.is_file():
         saved = pd.read_csv(summary_path)
-        required = {"condition", "model", "strategy", "trials", "accuracy",
-                    "mean_graph_error", "mean_additional_samples"}
-        if not required.issubset(saved):
-            st.error("Evaluation results could not be displayed because the saved summary is incomplete.")
+        if "Graph-Aware Likelihood (Known Params)" in set(saved.get("model", [])):
+            st.warning(
+                "These saved experimental results belong to the previous "
+                "parameter-aware sampling system. All information-gain chart "
+                "values are out of date. Regenerate with: "
+                "python Scripts/prepare_demo_results.py"
+            )
         else:
-            selected_condition = st.selectbox(
-                "Evaluation condition", sorted(saved["condition"].unique()),
-                key="demo_result_condition",
-            )
-            subset = saved[saved["condition"] == selected_condition].copy()
-            if "Graph-Aware Likelihood (Known Params)" in set(subset["model"]):
-                st.warning(
-                    "These saved results include an older graph method that was "
-                    "given the true simulation parameters. Its results are obsolete. "
-                    "Run Scripts/prepare_demo_results.py again for the blind-inference evaluation."
+            required = {"condition", "model", "strategy", "trials", "accuracy",
+                        "mean_graph_error", "mean_additional_samples"}
+            if not required.issubset(saved):
+                st.error("Evaluation results could not be displayed because the saved summary is incomplete.")
+            else:
+                selected_condition = st.selectbox(
+                    "Evaluation condition", sorted(saved["condition"].unique()),
+                    key="demo_result_condition",
                 )
-                subset = subset[
-                    subset["model"] != "Graph-Aware Likelihood (Known Params)"
-                ].copy()
-            methods = sorted(subset["model"].unique())
-            preferred = ["Logistic Regression", "Random Forest", GRAPH_MODEL_NAME]
-            shown_methods = st.multiselect(
-                "Methods shown in chart and table", methods,
-                default=[name for name in preferred if name in methods],
-                key="demo_results_models", format_func=method_label,
-            )
-            if GRAPH_MODEL_NAME not in methods:
-                st.info(
-                    "Saved evaluations predate the new graph-aware method. "
-                    "Recalculate the repeated trials to compare the upgraded system."
+                subset = saved[saved["condition"] == selected_condition].copy()
+                methods = sorted(subset["model"].unique())
+                preferred = ["Logistic Regression", "Random Forest", GRAPH_MODEL_NAME]
+                shown_methods = st.multiselect(
+                    "Methods shown in chart and table", methods,
+                    default=[name for name in preferred if name in methods],
+                    key="demo_results_models", format_func=method_label,
                 )
-            subset = subset[subset["model"].isin(shown_methods)].copy()
-            subset["strategy"] = subset["strategy"].map({
-                "static": "No Additional Sample",
-                "random": "Random Extra Sample",
-                "information_gain": "Information-Gain Sample",
-            })
-            fig = go.Figure()
-            for model_name, group in subset.groupby("model", sort=False):
-                fig.add_trace(go.Bar(
-                    name=method_label(model_name), x=group["strategy"],
-                    y=group["accuracy"] * 100,
-                    text=group["accuracy"].map(lambda v: f"{v:.1%}"),
-                    textposition="outside",
-                    cliponaxis=False,
-                    textfont=dict(size=13),
-                ))
-            fig.update_layout(
-                title=f"Measured accuracy: {selected_condition}",
-                barmode="group", height=440,
-                yaxis=dict(range=[0, 115], title="Exact-source accuracy (%)",
-                           gridcolor="#33475D", dtick=20),
-                margin=dict(t=70, l=65, r=30, b=110),
-                legend=dict(orientation="h", x=0, y=-0.32),
-                paper_bgcolor=PANEL, plot_bgcolor=PANEL,
-                font=dict(color=MUTED),
-            )
-            st.plotly_chart(fig, use_container_width=True, key="aps_demo_results")
-            st.caption(
-                "Both random and information-gain strategies use one additional measurement; "
-                "the static strategy uses none. Results are based on repeated synthetic trials."
-            )
-            metrics_table = subset[[
-                "model", "strategy", "trials", "accuracy",
-                "mean_graph_error", "mean_additional_samples",
-            ]].copy()
-            metrics_table["accuracy"] = metrics_table["accuracy"].map(lambda v: f"{v:.1%}")
-            metrics_table["mean_graph_error"] = metrics_table["mean_graph_error"].map(
-                lambda v: "N/A" if pd.isna(v) else f"{v:.2f}"
-            )
-            metrics_table["mean_additional_samples"] = metrics_table["mean_additional_samples"].map(
-                lambda v: f"{v:.1f}"
-            )
-            metrics_table.columns = [
-                "Model", "Sampling Strategy", "Trials", "Accuracy",
-                "Mean Graph Error (Edges)", "Additional Measurements",
-            ]
-            metrics_table["Model"] = metrics_table["Model"].map(method_label)
-            if "missing_source_accuracy" in subset:
-                metrics_table["Source Unobserved Accuracy"] = subset[
-                    "missing_source_accuracy"
-                ].map(lambda v: "N/A" if pd.isna(v) else f"{v:.1%}")
-            st.dataframe(metrics_table, hide_index=True, use_container_width=True)
-            st.caption(
-                "Source Unobserved Accuracy measures trials where the true source's "
-                "initial sensor reading was missing. All results use seeded independent "
-                "synthetic events. Blind graph inference marginalizes unknown "
-                "physical parameters instead of using true scenario settings."
-            )
+                if GRAPH_MODEL_NAME not in methods:
+                    st.info(
+                        "Saved evaluations predate the new graph-aware method. "
+                        "Recalculate the repeated trials to compare the upgraded system."
+                    )
+                subset = subset[subset["model"].isin(shown_methods)].copy()
+                subset["strategy"] = subset["strategy"].map({
+                    "static": "No Additional Sample",
+                    "random": "Random Extra Sample",
+                    "information_gain": "Information-Gain Sample",
+                })
+                fig = go.Figure()
+                for model_name, group in subset.groupby("model", sort=False):
+                    fig.add_trace(go.Bar(
+                        name=method_label(model_name), x=group["strategy"],
+                        y=group["accuracy"] * 100,
+                        text=group["accuracy"].map(lambda v: f"{v:.1%}"),
+                        textposition="outside",
+                        cliponaxis=False,
+                        textfont=dict(size=13),
+                    ))
+                fig.update_layout(
+                    title=f"Measured accuracy: {selected_condition}",
+                    barmode="group", height=440,
+                    yaxis=dict(range=[0, 115], title="Exact-source accuracy (%)",
+                               gridcolor="#33475D", dtick=20),
+                    margin=dict(t=70, l=65, r=30, b=110),
+                    legend=dict(orientation="h", x=0, y=-0.32),
+                    paper_bgcolor=PANEL, plot_bgcolor=PANEL,
+                    font=dict(color=MUTED),
+                )
+                st.plotly_chart(fig, use_container_width=True, key="aps_demo_results")
+                st.caption(
+                    "Both random and information-gain strategies use one additional measurement; "
+                    "the static strategy uses none. Results are based on repeated synthetic trials."
+                )
+                metrics_table = subset[[
+                    "model", "strategy", "trials", "accuracy",
+                    "mean_graph_error", "mean_additional_samples",
+                ]].copy()
+                metrics_table["accuracy"] = metrics_table["accuracy"].map(lambda v: f"{v:.1%}")
+                metrics_table["mean_graph_error"] = metrics_table["mean_graph_error"].map(
+                    lambda v: "N/A" if pd.isna(v) else f"{v:.2f}"
+                )
+                metrics_table["mean_additional_samples"] = metrics_table["mean_additional_samples"].map(
+                    lambda v: f"{v:.1f}"
+                )
+                metrics_table.columns = [
+                    "Model", "Sampling Strategy", "Trials", "Accuracy",
+                    "Mean Graph Error (Edges)", "Additional Measurements",
+                ]
+                metrics_table["Model"] = metrics_table["Model"].map(method_label)
+                if "missing_source_accuracy" in subset:
+                    metrics_table["Source Unobserved Accuracy"] = subset[
+                        "missing_source_accuracy"
+                    ].map(lambda v: "N/A" if pd.isna(v) else f"{v:.1%}")
+                st.dataframe(metrics_table, hide_index=True, use_container_width=True)
+                st.caption(
+                    "Source Unobserved Accuracy measures trials where the true source's "
+                    "initial sensor reading was missing. All results use seeded independent "
+                    "synthetic events. Blind graph inference marginalizes unknown "
+                    "physical parameters instead of using true scenario settings."
+                )
     else:
         st.info("Repeated-trial evaluation results are not available for display.")
 
