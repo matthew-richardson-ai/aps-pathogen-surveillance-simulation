@@ -1,0 +1,36 @@
+# Reproducibility check for the classroom APS simulation.
+# The experiment CSVs are not committed; unit tests use deterministic fixtures.
+name: APS Python Tests
+
+on:
+  push:
+    branches:
+      - main
+      - feature/demo-ready-aps
+  pull_request:
+    branches:
+      - main
+      - feature/one-step-adaptive-sampling
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Configure Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install APS dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r OB/requirements.txt
+      - name: Compile Python source
+        run: python -m compileall -q Adaptive Localization OB Simulation Scripts Tests
+      - name: Run tests
+        run: python -m pytest -q
