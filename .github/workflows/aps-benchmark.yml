@@ -14,6 +14,17 @@ on:
       - "OB/live_engine.py"
       - "Scripts/prepare_demo_results.py"
       - ".github/workflows/aps-benchmark.yml"
+  pull_request:
+    branches:
+      - feature/one-step-adaptive-sampling
+    paths:
+      - "Localization/**"
+      - "Adaptive/**"
+      - "Simulation/**"
+      - "OB/adaptive_experiments.py"
+      - "OB/live_engine.py"
+      - "Scripts/prepare_demo_results.py"
+      - ".github/workflows/aps-benchmark.yml"
   workflow_dispatch:
 
 jobs:
