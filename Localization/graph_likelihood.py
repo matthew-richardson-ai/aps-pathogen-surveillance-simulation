@@ -1,115 +1,135 @@
-"""Graph-aware source localization using the APS observation model.
+"""Source localization with a Bayesian graph model and *unknown* signal settings.
 
-Unlike Argmax, this evaluates *every* possible source, even unobserved rooms.
-It is a model-based likelihood method, not a classifier trained on Justin's data.
+NO ORACLE PARAMETERS: Inference accepts only observed sensor readings, the
+canonical APS graph, and the identity of the separately measured follow-up
+zone. The simulator's actual source, signal intensity, decay and primary noise
+are never passed to the predictor.
 
-IMPORTANT FAIRNESS NOTE: This estimator uses the scenario's source intensity,
-spatial decay and sensor noise settings. Those are *known simulation parameters*
-rather than readings. It therefore has more prior physical-model information
-than Logistic Regression or Random Forest. Report this assumption explicitly.
-The true source and ideal signal array are never inputs to this estimator.
+The model assumes an exponential graph-distance signal family and averages
+(marginalizes) over a fixed, publicly declared grid of plausible nuisance
+parameters. These priors are modeling assumptions, NOT learned ground truth,
+and accuracy is not guaranteed on sparse/noisy observations.
 """
 from __future__ import annotations
 
 from collections.abc import Mapping
+from functools import lru_cache
 import math
 
+import networkx as nx
 import numpy as np
 from scipy.special import log_ndtr, logsumexp
 
 from Simulation.facility import build_facility
-from Simulation.outbreak import expected_signals
 
-GRAPH_MODEL_NAME = "Graph-Aware Likelihood (Known Params)"
+GRAPH_MODEL_NAME = "Graph-Aware Bayesian Inference"
 ZONES = tuple(f"zone_{i}" for i in range(1, 9))
+
+# Prespecified parameter ranges are independent of any particular scenario.
+# They intentionally cover normal, noisy, weak-signal and combined-stress cases.
+INTENSITIES = (0.30, 0.50, 0.75, 1.00)
+DECAYS = (0.35, 0.65, 0.95, 1.25)
+NOISE_LEVELS = (0.06, 0.16, 0.30)
+FOLLOWUP_NOISE_SD = 0.04
+
+
+@lru_cache(maxsize=1)
+def _hypotheses() -> tuple[np.ndarray, np.ndarray]:
+    """Return signal means and primary noise scales for eight source hypotheses.
+
+    Each source receives exactly the same number and prior weight of plausible
+    physical settings. Array shape: (8 sources, 48 nuisance settings, 8 rooms).
+    The source truth and per-event simulator settings are never looked up.
+    """
+    graph = build_facility()
+    distances = np.asarray([
+        [nx.shortest_path_length(graph, source, sensor) for sensor in ZONES]
+        for source in ZONES
+    ], dtype=float)
+    configs = [(intensity, decay, noise)
+               for intensity in INTENSITIES
+               for decay in DECAYS
+               for noise in NOISE_LEVELS]
+    means = np.stack([
+        intensity * np.exp(-decay * distances)
+        for intensity, decay, _ in configs
+    ], axis=1)
+    noise = np.asarray([config[2] for config in configs], dtype=float)
+    return means, noise
+
+
+def _joint_log_weights(
+    readings: Mapping[str, float | None],
+    requested_zone: str | None = None,
+) -> np.ndarray:
+    if set(readings) != set(ZONES):
+        raise ValueError("Graph inference requires exactly eight APS zones")
+    if requested_zone is not None and requested_zone not in ZONES:
+        raise ValueError("Invalid follow-up zone")
+    for reading in readings.values():
+        if reading is not None and (
+            not math.isfinite(float(reading)) or not 0 <= float(reading) <= 1
+        ):
+            raise ValueError("Sensor readings must be within 0..1 or missing")
+
+    means, sigma_primary = _hypotheses()
+    n_settings = means.shape[1]
+    log_weights = np.full(
+        (len(ZONES), n_settings),
+        -math.log(len(ZONES) * n_settings),
+        dtype=float,
+    )
+    for index, zone in enumerate(ZONES):
+        reading = readings[zone]
+        if reading is None:
+            continue
+        sigma = (
+            np.full(n_settings, FOLLOWUP_NOISE_SD)
+            if zone == requested_zone else sigma_primary
+        )
+        signal_means = means[:, :, index]
+        scaled = (float(reading) - signal_means) / sigma[None, :]
+        # The sensor clips values to [0, 1]. Endpoints are censored events,
+        # not ordinary Gaussian point densities.
+        if float(reading) == 0:
+            likelihood = log_ndtr(-signal_means / sigma[None, :])
+        elif float(reading) == 1:
+            likelihood = log_ndtr((signal_means - 1.0) / sigma[None, :])
+        else:
+            likelihood = (
+                -0.5 * scaled**2 - np.log(sigma[None, :])
+                - 0.5 * math.log(2.0 * math.pi)
+            )
+        log_weights += likelihood
+    return log_weights - logsumexp(log_weights)
 
 
 def source_posterior(
     readings: Mapping[str, float | None],
     *,
-    source_intensity: float,
-    decay_rate: float,
-    noise_std: float,
     requested_zone: str | None = None,
-    sample_noise_std: float = 0.04,
 ) -> dict[str, float]:
-    """Return eight normalized source probabilities under an assumed model.
+    """Eight source probabilities after integrating out unknown model settings.
 
-    Uses independent Gaussian observation noise and treats readings clipped at
-    zero and one as *censored* rather than interior Gaussian measurements.
-    Missing measurements contribute no evidence. The extra measurement has a
-    separate instrument noise level (0.04 in the current APS simulator).
-
-    With no observations, returns a uniform prior. Call graph_prediction() for
-    the abstaining decision-rule version of this estimate.
+    These are conditional on the stated model family and discrete priors;
+    they are NOT calibrated real-world confidence estimates.
     """
-    if set(readings) != set(ZONES):
-        raise ValueError("Graph likelihood requires readings for eight APS zones")
-    if source_intensity <= 0 or decay_rate < 0 or noise_std < 0 or sample_noise_std <= 0:
-        raise ValueError("Invalid graph-likelihood signal or noise parameters")
-    if requested_zone is not None and requested_zone not in ZONES:
-        raise ValueError("Additional measurement zone is not in the facility")
-    if any(v is not None and (not math.isfinite(float(v)) or not 0 <= float(v) <= 1)
-           for v in readings.values()):
-        raise ValueError("Sensor readings must lie within 0..1 or be missing")
-
-    graph = build_facility()
-    means = {
-        zone: expected_signals(
-            graph, zone, source_intensity=source_intensity, decay_rate=decay_rate
-        )
-        for zone in ZONES
-    }
-
-    # Flat source prior: we do not secretly favor any room or access truth.
-    log_scores = np.full(len(ZONES), -math.log(len(ZONES)), dtype=float)
-    for zone, reading in readings.items():
-        if reading is None:
-            continue
-        # Nonzero floor is only numerical protection when the simulator uses
-        # exactly zero noise. Both the primary and follow-up instruments are
-        # otherwise compared against their respective settings.
-        sigma = max(1e-4, sample_noise_std if zone == requested_zone else noise_std)
-        expected = np.array([means[source][zone] for source in ZONES])
-        value = float(reading)
-        if value <= 0.0:
-            likelihood = log_ndtr(-expected / sigma)
-        elif value >= 1.0:
-            likelihood = log_ndtr((expected - 1.0) / sigma)
-        else:
-            likelihood = (
-                -0.5 * ((value - expected) / sigma) ** 2
-                -math.log(sigma) -0.5 * math.log(2.0 * math.pi)
-            )
-        log_scores += likelihood
-
-    probs = np.exp(log_scores - logsumexp(log_scores))
-    return dict(zip(ZONES, probs.astype(float)))
+    normalized = _joint_log_weights(readings, requested_zone)
+    by_source = np.exp(logsumexp(normalized, axis=1))
+    return dict(zip(ZONES, map(float, by_source)))
 
 
 def graph_prediction(
     readings: Mapping[str, float | None],
     *,
-    source_intensity: float,
-    decay_rate: float,
-    noise_std: float,
     requested_zone: str | None = None,
-    sample_noise_std: float = 0.04,
 ) -> tuple[str | None, dict[str, float]]:
-    """Return maximum-likelihood source and the full posterior-like score map.
+    """Return the most probable source from readings alone; abstain if missing.
 
-    This is an estimated probability conditional on a *correctly specified*
-    spatial observation model. It must not be presented as real-world certainty.
-    The model abstains when all eight readings are absent.
+    There is deliberately no source_intensity, decay_rate or noise_std argument,
+    preventing per-event true settings from leaking into this estimator.
     """
-    posterior = source_posterior(
-        readings,
-        source_intensity=source_intensity,
-        decay_rate=decay_rate,
-        noise_std=noise_std,
-        requested_zone=requested_zone,
-        sample_noise_std=sample_noise_std,
-    )
+    probabilities = source_posterior(readings, requested_zone=requested_zone)
     if all(value is None for value in readings.values()):
-        return None, posterior
-    return max(ZONES, key=posterior.get), posterior
+        return None, probabilities
+    return max(ZONES, key=probabilities.get), probabilities
