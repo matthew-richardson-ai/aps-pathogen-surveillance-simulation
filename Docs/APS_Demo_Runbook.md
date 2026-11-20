@@ -15,7 +15,7 @@ From the repository root with the final demo branch checked out:
 ```powershell
 python -m pip install -r requirements.txt
 python -m pip install -r OB/requirements.txt
-python -m pytest Tests/test_simulation.py Tests/test_localization.py Tests/test_evaluation.py Tests/test_live_engine.py Tests/test_ml_pipeline.py Tests/test_adaptive_policy.py Tests/test_dataset_discovery.py -q
+python -m pytest -q
 python Scripts/prepare_demo_results.py
 python -m streamlit run OB/live_dashboard.py
 ```
@@ -37,7 +37,7 @@ Suggested wording:
 
 > Our question is whether a machine-learning system can identify a hidden contamination source from incomplete environmental readings. We model an eight-zone connected facility and run simulated events where sensors are noisy or missing. Then we test whether one additional targeted measurement can improve the prediction.
 
-Show the **Guided Demo** view and point to the facility network.
+Show the **APS Demonstration** view and point to the facility network.
 
 ### 0:45–1:40 | How the simulation works — Emmanuel
 
@@ -69,7 +69,7 @@ Suggested wording:
 
 > We repeated the experiment across normal, noisy, missing-reading, and combined-stress conditions. Here are the exact-source accuracy and graph-distance results for no additional sample, one random sample, and one information-gain-selected sample. A positive difference means the targeted policy helped in that setting; a negative difference means random sampling worked better.
 
-Use the **Guided Demo** summary (from saved experiment results), or the **Adaptive Sampling** tab. Never promise a positive result for both classifiers. Read actual values from the saved experiment.
+Use the **APS Demonstration** summary (from saved experiment results), or the **Adaptive Sampling** tab. Never promise a positive result for both classifiers. Read actual values from the saved experiment.
 
 ### 4:40–5:00 | Conclusion and limitations
 
@@ -79,11 +79,18 @@ Suggested wording:
 
 Do not use the phrase "real-time pathogen surveillance" for this implementation.
 
+
+### Updated localization explanation
+
+The dashboard now compares the **Argmax Baseline**, **Logistic Regression** and **Random Forest** trained on the same 16 sensor/missingness inputs, plus a **Graph-Aware Likelihood (Known Params)** inference method. It retains the original (non-augmented) ML models as controls against the robust augmented versions. Say clearly that graph likelihood uses known simulator intensity, decay and noise settings, which the learned classifiers are *not* given; it is not a like-for-like supervised classifier.
+
+The original training dataset is not overwritten. Augmented sparse/noisy views are created from the training partition only. Compare actual held-out results after regenerating the experiment outputs; if robust training performs worse, report that outcome. In the live demo, show the source after predictions and include **Source Unobserved Accuracy** in the results discussion.
+
 ## Presenter checklist
 
 - [ ] Confirm the working local branch contains the reviewed dashboard and source data.
 - [ ] All tests pass on the presentation machine.
-- [ ] Train the two models successfully at least once.
+- [ ] Train both original and robust ML variants at least once; confirm graph likelihood works without training.
 - [ ] Run and inspect the four-condition experiment; save the CSV outputs.
 - [ ] Check that labels use "Zone 1" rather than code identifiers and that all controls are legible on a projector.
 - [ ] Prepare two deterministic seeds: one normal and one difficult. Confirm actual outcomes in advance and note the seeds.
@@ -106,7 +113,7 @@ Do not use the phrase "real-time pathogen surveillance" for this implementation.
 
 **Why use a baseline?** It tells us whether trained classifiers outperform a simple deterministic maximum-reading rule.
 
-**What are the model inputs?** Eight readings plus eight missingness indicators. No true-source labels or simulation metadata enter the predictors.
+**What are the ML model inputs?** Eight readings plus eight missingness indicators; no source label or simulation metadata enters the learned classifiers. The separate graph likelihood method also assumes known simulator intensity, spatial decay and sensor noise settings.
 
 **How is adaptive selection chosen?** Expected reduction in uncertainty about source location, estimated across possible next measurements using the assumed graph-distance signal model.
 
