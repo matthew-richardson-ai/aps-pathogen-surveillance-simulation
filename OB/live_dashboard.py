@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
 
 from Simulation.facility import build_facility
 from OB.prediction_scoring import score_current_predictions, score_before_after
+from OB.scenario_comparison import comparison_table, scenario_takeaways
 from live_engine import Scenario, simulate, sample_one_more, predict_baseline, baseline_error, batch_baseline
 from Localization.ml_pipeline import train_models, predict_models, reading_features
 from Localization.graph_likelihood import GRAPH_MODEL_NAME, graph_prediction, source_posterior
@@ -218,6 +219,7 @@ def load_demo_scene(name):
     st.session_state["source"] = scene["source"]
     st.session_state["seed"] = scene["seed"]
     st.session_state["demo_reveal"] = False
+    st.session_state["reveal_truth"] = False
     st.session_state.pop("auto_sample_details", None)
 
 for key, value in {"seed": 42, "source": "Random", "preset": "Normal conditions", **PRESETS["Normal conditions"]}.items():
@@ -228,6 +230,29 @@ st.session_state.setdefault("live_selected_zone", "zone_3")
 def apply_preset():
     for key, value in PRESETS[st.session_state.preset].items():
         st.session_state[key] = value
+
+
+def sync_demo_reveal():
+    """Keep the live-facility reveal toggle synchronized with the demo checkbox."""
+    st.session_state["reveal_truth"] = bool(st.session_state["demo_reveal"])
+
+
+def sync_live_reveal():
+    """Keep the demo checkbox synchronized with the live-facility reveal toggle."""
+    st.session_state["demo_reveal"] = bool(st.session_state["reveal_truth"])
+
+
+def toggle_demo_reveal():
+    """Button callback runs before Streamlit instantiates keyed widgets."""
+    revealed = not bool(st.session_state.get("demo_reveal", False))
+    st.session_state["demo_reveal"] = revealed
+    st.session_state["reveal_truth"] = revealed
+
+
+def clear_previous_scenario():
+    """Forget only the one-event comparison history, not the current scene."""
+    st.session_state.pop("previous_snapshot", None)
+
 
 def advance_seed():
     """Generate a new random-source event, retaining the current conditions.
@@ -279,9 +304,16 @@ params = Scenario(
     decay_rate=float(st.session_state.decay_rate),
 )
 if st.session_state.get("active_params") != params:
+    # Preserve the full previous event, including any follow-up measurement.
+    # Do not overwrite history on ordinary widget reruns or sample selection.
+    # A fresh browser session has no previous event to compare.
+    prior_snapshot = st.session_state.get("active_snapshot")
+    if prior_snapshot is not None:
+        st.session_state.previous_snapshot = prior_snapshot
     st.session_state.active_params = params
     st.session_state.active_snapshot = simulate(params)
     st.session_state.reveal_truth = False
+    st.session_state.demo_reveal = False
     st.session_state.pop("manual_zone", None)
     st.session_state.pop("batch_results", None)
     st.session_state.pop("adaptive_results", None)
@@ -416,7 +448,7 @@ with demo_tab:
             "Facility visualization", ["3D Rooms", "2D Network"],
             key="demo_facility_view", horizontal=True,
         )
-        st.checkbox("Reveal True Source", key="demo_reveal")
+        st.checkbox("Reveal True Source", key="demo_reveal", on_change=sync_demo_reveal)
         if demo_view == "3D Rooms":
             graph_figure = facility_3d_plot(
                 snap, build_facility(), predict_baseline(snap.readings),
@@ -740,7 +772,7 @@ with live:
             "Facility visualization", ["3D Rooms", "2D Network"],
             key="live_facility_view", horizontal=True,
         )
-        st.toggle("Reveal hidden source", key="reveal_truth")
+        st.toggle("Reveal hidden source", key="reveal_truth", on_change=sync_live_reveal)
         if live_view == "3D Rooms":
             live_figure = facility_3d_plot(
                 snap, build_facility(), predict_baseline(snap.readings),
