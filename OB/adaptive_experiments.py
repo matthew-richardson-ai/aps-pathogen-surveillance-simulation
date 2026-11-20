@@ -30,9 +30,13 @@ def compare_sampling_policies(
     artifacts: ModelArtifacts,
     scenario: Scenario,
     trials: int = 80,
-    model_names: tuple[str, ...] = ("Logistic Regression", "Random Forest", GRAPH_MODEL_NAME),
+    model_names: tuple[str, ...] = ("Logistic Regression", "Random Forest"),
 ) -> pd.DataFrame:
     """Compare methods on matched fresh simulated scenarios.
+
+    The default two-model signature is intentionally backward compatible.
+    Callers may explicitly include GRAPH_MODEL_NAME and Original controls.
+
 
     The experiment starts from seeds far removed from the saved dataset
     generator's default seeds, and randomizes the hidden source per run.
