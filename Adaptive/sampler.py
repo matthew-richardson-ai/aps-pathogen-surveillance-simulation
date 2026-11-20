@@ -124,3 +124,72 @@ def choose_next_zone(
     # Stable tie-breaking for reproducibility.
     selected = max(sorted(gains), key=lambda zone: gains[zone])
     return SampleChoice(selected, gains[selected], gains)
+
+
+def choose_next_zone_blind(
+    graph: nx.Graph,
+    readings: Mapping[str, float | None],
+    prior: Mapping[str, float],
+    *,
+    sample_noise_std: float = 0.04,
+    bins: int = 50,
+) -> SampleChoice | None:
+    """Choose a measurement without accessing actual simulator parameters.
+
+    For each candidate source and as-yet-unobserved sensor, this policy
+    integrates hypothetical measurements over *fixed* plausible intensity
+    and graph-decay values. It conditions on the input source probabilities,
+    not on the true hidden source or actual event's signal/decay/noise settings.
+
+    This is a discretized expected-entropy policy under an assumed model
+    family. The estimated gain is not guaranteed to match realized gain.
+    """
+    from Localization.graph_likelihood import INTENSITIES, DECAYS
+
+    if set(readings) != set(ZONES) or set(prior) != set(ZONES):
+        raise ValueError("Readings and prior must cover the eight APS zones")
+    if sample_noise_std <= 0 or bins < 5:
+        raise ValueError("Invalid observation noise or histogram bin count")
+
+    weights = np.asarray([prior[zone] for zone in ZONES], dtype=float)
+    if np.any(~np.isfinite(weights)) or np.any(weights < 0) or weights.sum() <= 0:
+        raise ValueError("Invalid source probabilities")
+    weights /= weights.sum()
+    starting_entropy = _entropy(weights)
+
+    # Binning includes clipped endpoints at zero and one.
+    edges = np.r_[-np.inf, np.linspace(0.0, 1.0, bins + 1)[1:-1], np.inf]
+    gains = {}
+    for zone in ZONES:
+        if readings[zone] is not None:
+            continue
+        # Integrate over source strength and decay, not an event-specific
+        # hidden parameter value. Shape: sources x nuisance settings x bins.
+        means = np.asarray([
+            [
+                intensity * np.exp(
+                    -decay * nx.shortest_path_length(graph, source, zone)
+                )
+                for intensity in INTENSITIES for decay in DECAYS
+            ]
+            for source in ZONES
+        ], dtype=float)
+        likelihood = np.diff(
+            ndtr((edges[None, None, :] - means[:, :, None]) / sample_noise_std),
+            axis=-1,
+        ).mean(axis=1)
+        outcomes = weights @ likelihood
+        joint = weights[:, None] * likelihood
+        posterior = np.divide(
+            joint, outcomes[None, :], out=np.zeros_like(joint),
+            where=outcomes[None, :] > 0,
+        )
+        entropy_after = sum(
+            outcomes[j] * _entropy(posterior[:, j])
+            for j in range(len(outcomes))
+        )
+        gains[zone] = max(0.0, float(starting_entropy - entropy_after))
+    if not gains:
+        return None
+    selected = max(sorted(gains), key=gains.get)
+    return SampleChoice(selected, gains[selected], gains)
