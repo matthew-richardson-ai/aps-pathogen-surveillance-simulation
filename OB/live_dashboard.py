@@ -779,7 +779,16 @@ with live:
 
 with models_tab:
     st.subheader("Machine-Learning Source Localization")
-    st.write("Train Logistic Regression and Random Forest using Justin\'s saved synthetic dataset. Only initial sensor readings and missingness indicators are used as model inputs.")
+    st.write(
+        "Compare original Logistic Regression and Random Forest against versions trained "
+        "with additional sparse/noisy views of Justin's **training partition only**. "
+        "Their accuracy is measured on the identical untouched held-out test partition."
+    )
+    st.caption(
+        "Graph-Aware Likelihood is a parameter-aware model of the simulated signal physics, "
+        "not a trained ML classifier. It knows source intensity, distance decay, and sensor "
+        "noise, which the data-only classifiers do not."
+    )
     if st.button("Train models and evaluate held-out test data", type="primary"):
         st.session_state.ml_enabled = True
     if not st.session_state.get("ml_enabled", False):
@@ -789,8 +798,9 @@ with models_tab:
             trained = load_ml_artifacts()
             st.caption(
                 f"Dataset: {Path(trained.source_path).name} | "
-                f"Training: {trained.train_count:,} scenarios | "
-                f"Held-out test: {trained.test_count:,} scenarios"
+                f"Training: {trained.train_count:,} independent scenarios | "
+                f"Augmented training views: {trained.augmented_train_count:,} | "
+                f"Held-out test: {trained.test_count:,} untouched scenarios"
             )
             scores = trained.scores.copy()
             shown_scores = scores.copy()
@@ -802,9 +812,15 @@ with models_tab:
             shown_scores.columns = ["Model", "Exact accuracy", "Mean graph error (edges)", "Test scenarios"]
             st.dataframe(shown_scores, hide_index=True, use_container_width=True)
             fig = go.Figure(go.Bar(
-                x=scores["model"].map(method_label),
-                y=scores["accuracy"] * 100,
-                marker_color=[CYAN, GREEN, PURPLE],
+                x=scores["accuracy"] * 100,
+                y=scores["model"].map(method_label),
+                orientation="h",
+                marker_color=[
+                    "#7389A5" if "(Original)" in name else
+                    "#EDB978" if name == GRAPH_MODEL_NAME else
+                    CYAN if name in ("Logistic Regression", "Random Forest") else GREEN
+                    for name in scores["model"]
+                ],
                 text=[f"{v:.1%}" for v in scores["accuracy"]],
                 textposition="outside",
                 cliponaxis=False,
@@ -812,19 +828,20 @@ with models_tab:
             ))
             fig.update_layout(
                 title="Held-out exact-source accuracy",
-                yaxis=dict(title="Accuracy (%)", range=[0, 115], gridcolor="#26384f", dtick=20),
+                xaxis=dict(title="Accuracy (%)", range=[0, 115], gridcolor="#26384f", dtick=20),
+                yaxis=dict(autorange="reversed"),
                 paper_bgcolor=PANEL, plot_bgcolor=PANEL, font=dict(color=MUTED),
-                height=385, margin=dict(t=75, l=58, r=30, b=50), showlegend=False,
+                height=440, margin=dict(t=70, l=285, r=45, b=65), showlegend=False,
             )
             st.plotly_chart(fig, use_container_width=True)
             st.subheader("Predictions on the Current Scenario")
-            current_predictions = predict_models(trained, snap.readings)
-            initial_predictions = predict_models(trained, simulate(params).readings)
+            current_predictions = all_current_predictions(trained, snap)
+            initial_predictions = all_current_predictions(trained, simulate(params))
             display_predictions = current_predictions.copy()
             display_predictions["max_class_probability"] = display_predictions["max_class_probability"].map(
                 lambda p: "N/A" if pd.isna(p) else f"{p:.1%}"
             )
-            display_predictions.columns = ["Model", "Predicted Source", "Largest Class Probability (Uncalibrated)"]
+            display_predictions.columns = ["Model", "Predicted Source", "Top Model Probability (Not Guaranteed)"]
             display_predictions["Predicted Source"] = display_predictions["Predicted Source"].map(zone_label)
             st.dataframe(display_predictions, hide_index=True, use_container_width=True)
             if snap.requested_zone is not None:
@@ -841,16 +858,19 @@ with models_tab:
             )["correct"].mean().reset_index()
             condition_fig = go.Figure()
             for model_name, data in by_condition.groupby("model", sort=False):
-                condition_fig.add_trace(go.Bar(
-                    name=model_name,
+                condition_fig.add_trace(go.Scatter(
+                    name=method_label(model_name),
+                    mode="lines+markers",
                     x=data["scenario_type"].map(condition_label),
                     y=data["correct"] * 100,
+                    marker=dict(size=8),
                 ))
             condition_fig.update_layout(
                 title="Held-out accuracy by synthetic condition",
-                barmode="group", yaxis=dict(range=[0, 105], title="Accuracy (%)", gridcolor="#26384f"),
+                yaxis=dict(range=[0, 105], title="Accuracy (%)", gridcolor="#26384f"),
                 paper_bgcolor=PANEL, plot_bgcolor=PANEL, font=dict(color=MUTED),
-                height=420,
+                height=470, margin=dict(t=65, l=55, r=45, b=130),
+                legend=dict(orientation="h", y=-0.46, x=0),
             )
             st.plotly_chart(condition_fig, use_container_width=True)
             st.download_button(
@@ -858,7 +878,13 @@ with models_tab:
                 trained.test_predictions.to_csv(index=False).encode("utf-8"),
                 file_name="aps_holdout_model_predictions.csv", mime="text/csv"
             )
-            st.caption("Held-out accuracy measures predictions on previously unseen simulated events. Model class probabilities are not calibrated confidence estimates.")
+            st.caption(
+                "Original and augmented classifiers share the same original training IDs "
+                "and are evaluated on unseen test IDs. More training views do not guarantee "
+                "better generalization. Graph likelihood receives the known simulator "
+                "parameter settings (not the hidden source), giving it extra information. "
+                "Class probabilities are not guaranteed to be calibrated."
+            )
         except (FileNotFoundError, ValueError) as exc:
             st.error(f"Unable to train or evaluate models: {exc}")
 
