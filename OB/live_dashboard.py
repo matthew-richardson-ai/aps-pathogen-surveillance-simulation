@@ -509,6 +509,13 @@ with demo_tab:
         st.caption("O = observed zones; rᵢ = the reading at zone i.")
 
     st.markdown("#### 2. Source Predictions")
+    reveal_label = ("Hide True Source and Scoring" if st.session_state.demo_reveal
+                    else "Show True Source and Scoring")
+    st.button(
+        reveal_label, key="reveal_near_predictions",
+        on_click=toggle_demo_reveal, use_container_width=False,
+        help="This updates the facility, scoring tables, and previous/current comparison.",
+    )
     st.write(
         "**Argmax** selects the strongest available sensor. **Logistic Regression** "
         "and **Random Forest** learn from observed values and missingness; their "
@@ -650,6 +657,18 @@ with demo_tab:
             st.error(f"Prediction comparison unavailable: {error}")
 
     st.markdown("#### 4. Results Across Repeated Simulations")
+    graph_controls = st.columns([1, 1.7])
+    with graph_controls[0]:
+        st.button(
+            "Hide True Source" if st.session_state.demo_reveal else "Show True Source",
+            key="reveal_near_graphs", on_click=toggle_demo_reveal,
+            use_container_width=True,
+        )
+    with graph_controls[1]:
+        st.caption(
+            "Toggle source visibility and correctness scoring without scrolling back "
+            "to the facility. Saved aggregate charts remain unchanged."
+        )
     summary_path = ROOT / "Results" / "Demo" / "sampling_summary.csv"
     if summary_path.is_file():
         saved = pd.read_csv(summary_path)
@@ -743,6 +762,81 @@ with demo_tab:
                 )
     else:
         st.info("Repeated-trial evaluation results are not available for display.")
+
+    st.markdown("#### 5. Previous vs. Current Scenario")
+    prior_event = st.session_state.get("previous_snapshot")
+    if prior_event is None:
+        st.info(
+            "Generate a new seeded scenario or load another preset to compare "
+            "the previous event with the current one automatically. "
+            "The comparison stays in this browser session."
+        )
+    else:
+        st.caption(
+            "Automatically preserves the last simulated event, including any "
+            "additional measurement. This is a comparison between DIFFERENT "
+            "events, not before/after sampling within one event."
+        )
+        prev_col, curr_col = st.columns(2)
+        with prev_col:
+            st.metric("Previous seed", prior_event.parameters.seed)
+            if st.session_state.demo_reveal:
+                st.caption("Previous true source: " + zone_label(prior_event.true_source))
+            st.caption(
+                "Previous observed readings: " +
+                str(sum(r is not None for r in prior_event.readings.values())) + "/8"
+            )
+        with curr_col:
+            st.metric("Current seed", snap.parameters.seed)
+            if st.session_state.demo_reveal:
+                st.caption("Current true source: " + zone_label(snap.true_source))
+            st.caption(
+                "Current observed readings: " +
+                str(sum(r is not None for r in snap.readings.values())) + "/8"
+            )
+        try:
+            if st.session_state.get("ml_enabled", False):
+                trained_models = load_ml_artifacts()
+                previous_rows = all_current_predictions(trained_models, prior_event)
+                current_rows = all_current_predictions(trained_models, snap)
+            else:
+                previous_graph, _ = graph_for_snapshot(prior_event)
+                current_graph, _ = graph_for_snapshot(snap)
+                previous_rows = pd.DataFrame([
+                    {"model": ARGMAX_LABEL,
+                     "predicted_source": predict_baseline(prior_event.readings)},
+                    {"model": GRAPH_MODEL_NAME,
+                     "predicted_source": previous_graph},
+                ])
+                current_rows = pd.DataFrame([
+                    {"model": ARGMAX_LABEL,
+                     "predicted_source": predict_baseline(snap.readings)},
+                    {"model": GRAPH_MODEL_NAME,
+                     "predicted_source": current_graph},
+                ])
+            event_comparison = comparison_table(
+                prior_event, snap, previous_rows, current_rows,
+                reveal=st.session_state.demo_reveal,
+            )
+            st.markdown("**How the models responded to two different events**")
+            with st.container():
+                visible_events = display_zone_columns(
+                    event_comparison, ["Previous Prediction", "Current Prediction"]
+                )
+                visible_events["Model"] = visible_events["Model"].map(method_label)
+                st.dataframe(visible_events, hide_index=True, use_container_width=True)
+            st.markdown("**Quick takeaways**")
+            for takeaway in scenario_takeaways(
+                prior_event, snap, event_comparison,
+                reveal=st.session_state.demo_reveal,
+            ):
+                st.write("• " + takeaway)
+        except (FileNotFoundError, ValueError) as error:
+            st.warning(f"Scenario comparison unavailable: {error}")
+        st.button(
+            "Clear Previous Comparison",
+            key="clear_previous_scenario", on_click=clear_previous_scenario,
+        )
 
 
 with live:
