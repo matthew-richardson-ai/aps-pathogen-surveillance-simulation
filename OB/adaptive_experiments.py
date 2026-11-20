@@ -15,6 +15,7 @@ import pandas as pd
 
 from Adaptive.sampler import source_prior, choose_next_zone
 from Localization.ml_pipeline import ModelArtifacts, reading_features
+from Localization.graph_likelihood import GRAPH_MODEL_NAME, graph_prediction, source_posterior
 from Simulation.facility import build_facility
 from OB.live_engine import Scenario, simulate, sample_one_more
 
@@ -29,7 +30,7 @@ def compare_sampling_policies(
     artifacts: ModelArtifacts,
     scenario: Scenario,
     trials: int = 80,
-    model_names: tuple[str, ...] = ("Logistic Regression", "Random Forest"),
+    model_names: tuple[str, ...] = ("Logistic Regression", "Random Forest", GRAPH_MODEL_NAME),
 ) -> pd.DataFrame:
     """Compare methods on matched fresh simulated scenarios.
 
@@ -51,8 +52,26 @@ def compare_sampling_policies(
         random_zone = random.Random(config.seed + 7819).choice(candidates)
         random_sample = sample_one_more(initial, random_zone)
         for model_name in model_names:
-            estimator = artifacts.models[model_name]
-            prior = source_prior(estimator, initial.readings)
+            # The graph-aware method uses known scenario parameters; ML models
+            # infer source probabilities from observed readings alone.
+            if model_name == GRAPH_MODEL_NAME:
+                estimator = None
+                prior = source_posterior(
+                    initial.readings,
+                    source_intensity=config.source_intensity,
+                    decay_rate=config.decay_rate,
+                    noise_std=config.noise_std,
+                )
+            elif model_name in artifacts.models:
+                estimator = artifacts.models[model_name]
+                prior = source_prior(estimator, initial.readings)
+            elif (artifacts.reference_models is not None
+                  and model_name.endswith(" (Original)")
+                  and model_name[:-11] in artifacts.reference_models):
+                estimator = artifacts.reference_models[model_name[:-11]]
+                prior = source_prior(estimator, initial.readings)
+            else:
+                raise ValueError(f"Unknown localization method: {model_name}")
             choice = choose_next_zone(
                 graph, initial.readings, prior,
                 source_intensity=config.source_intensity,
@@ -67,13 +86,28 @@ def compare_sampling_policies(
                 ("random", random_sample, random_zone),
                 ("information_gain", selected_sample, choice.zone),
             ):
-                predicted = _model_prediction(estimator, state.readings)
+                if model_name == GRAPH_MODEL_NAME:
+                    predicted, _ = graph_prediction(
+                        state.readings,
+                        source_intensity=config.source_intensity,
+                        decay_rate=config.decay_rate,
+                        noise_std=config.noise_std,
+                        requested_zone=state.requested_zone,
+                    )
+                else:
+                    predicted = _model_prediction(estimator, state.readings)
                 rows.append({
                     "run_id": f"adaptive_{i + 1:04d}",
                     "seed": config.seed,
                     "model": model_name,
                     "strategy": strategy,
                     "true_source": initial.true_source,
+                    "source_initially_observed": int(
+                        initial.readings[initial.true_source] is not None
+                    ),
+                    "initial_observation_count": sum(
+                        reading is not None for reading in initial.readings.values()
+                    ),
                     "predicted_source": predicted,
                     "correct": int(predicted == initial.true_source),
                     "graph_distance": (
