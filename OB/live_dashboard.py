@@ -631,6 +631,15 @@ with demo_tab:
                 key="demo_result_condition",
             )
             subset = saved[saved["condition"] == selected_condition].copy()
+            if "Graph-Aware Likelihood (Known Params)" in set(subset["model"]):
+                st.warning(
+                    "These saved results include an older graph method that was "
+                    "given the true simulation parameters. Its results are obsolete. "
+                    "Run Scripts/prepare_demo_results.py again for the blind-inference evaluation."
+                )
+                subset = subset[
+                    subset["model"] != "Graph-Aware Likelihood (Known Params)"
+                ].copy()
             methods = sorted(subset["model"].unique())
             preferred = ["Logistic Regression", "Random Forest", GRAPH_MODEL_NAME]
             shown_methods = st.multiselect(
@@ -698,7 +707,8 @@ with demo_tab:
             st.caption(
                 "Source Unobserved Accuracy measures trials where the true source's "
                 "initial sensor reading was missing. All results use seeded independent "
-                "synthetic events; graph likelihood assumes known simulator parameters."
+                "synthetic events. Blind graph inference marginalizes unknown "
+                "physical parameters instead of using true scenario settings."
             )
     else:
         st.info("Repeated-trial evaluation results are not available for display.")
@@ -836,9 +846,10 @@ with models_tab:
         "Their accuracy is measured on the identical untouched held-out test partition."
     )
     st.caption(
-        "Graph-Aware Likelihood is a parameter-aware model of the simulated signal physics, "
-        "not a trained ML classifier. It knows source intensity, distance decay, and sensor "
-        "noise, which the data-only classifiers do not."
+        "Graph-Aware Bayesian Inference uses the public eight-zone graph and "
+        "a predefined range of plausible signal/noise parameters. It integrates "
+        "over those unknown values rather than reading actual simulation settings. "
+        "It is a model-based estimator, not a trained classifier."
     )
     if st.button("Train models and evaluate held-out test data", type="primary"):
         st.session_state.ml_enabled = True
@@ -889,21 +900,37 @@ with models_tab:
             current_predictions = all_current_predictions(trained, snap)
             initial_predictions = all_current_predictions(trained, simulate(params))
             display_predictions = current_predictions.copy()
-            display_predictions["max_class_probability"] = display_predictions["max_class_probability"].map(
-                lambda p: "N/A" if pd.isna(p) else f"{p:.1%}"
+            reveal_scoring = bool(
+                st.session_state.get("demo_reveal", False)
+                or st.session_state.get("reveal_truth", False)
             )
-            display_predictions.columns = ["Model", "Predicted Source", "Top Model Probability (Not Guaranteed)"]
+            if reveal_scoring:
+                display_predictions = score_current_predictions(
+                    display_predictions, snap.true_source
+                )
+            display_predictions["max_class_probability"] = display_predictions[
+                "max_class_probability"
+            ].map(lambda p: "N/A" if pd.isna(p) else f"{p:.1%}")
+            display_predictions = display_predictions.rename(columns={
+                "model": "Model",
+                "predicted_source": "Predicted Source",
+                "max_class_probability": "Top Model Probability",
+            })
             display_predictions["Model"] = display_predictions["Model"].map(method_label)
             display_predictions["Predicted Source"] = display_predictions["Predicted Source"].map(zone_label)
             st.dataframe(display_predictions, hide_index=True, use_container_width=True)
+            if not reveal_scoring:
+                st.caption("Reveal the true source in APS Demonstration or Live Facility to show correctness and graph-distance error.")
             if snap.requested_zone is not None:
                 before_after = initial_predictions[["model", "predicted_source"]].merge(
                     current_predictions[["model", "predicted_source"]],
                     on="model", suffixes=("_before", "_after")
                 )
-                before_after.columns = ["Model", "Before Additional Sample", "After Additional Sample"]
+                before_after.columns = ["Model", "Before", "After"]
+                if reveal_scoring:
+                    before_after = score_before_after(before_after, snap.true_source)
                 before_after["Model"] = before_after["Model"].map(method_label)
-                before_after = display_zone_columns(before_after, ["Before Additional Sample", "After Additional Sample"])
+                before_after = display_zone_columns(before_after, ["Before", "After"])
                 st.caption(f"Prediction comparison after sampling {zone_label(snap.requested_zone)}")
                 st.dataframe(before_after, hide_index=True, use_container_width=True)
             by_condition = trained.test_predictions.groupby(
@@ -934,9 +961,10 @@ with models_tab:
             st.caption(
                 "Original and augmented classifiers share the same original training IDs "
                 "and are evaluated on unseen test IDs. More training views do not guarantee "
-                "better generalization. Graph likelihood receives the known simulator "
-                "parameter settings (not the hidden source), giving it extra information. "
-                "Class probabilities are not guaranteed to be calibrated."
+                "better generalization. Graph inference uses a prespecified "
+                "physical model family and integrates over unknown parameters; "
+                "no per-scenario true settings are given to any predictor. "
+                "Probabilities are not guaranteed to be calibrated."
             )
         except (FileNotFoundError, ValueError) as exc:
             st.error(f"Unable to train or evaluate models: {exc}")
@@ -1064,9 +1092,10 @@ with adaptive_tab:
     st.caption(
         "This is a controlled spatial snapshot simulation. Source truth is used "
         "only for scoring. ML-driven information gain uses uncalibrated class "
-        "probabilities. Graph likelihood uses known simulated intensity, decay "
-        "and sensor noise settings, so it has more prior information than the "
-        "data-only ML classifiers. Neither augmentation nor adaptive sampling "
+        "probabilities. Graph inference and the sampling planner both integrate "
+        "over a prespecified range of signal parameters; neither receives actual "
+        "event intensity, decay or noise settings. Graph inference still assumes "
+        "the simulator's graph topology and signal family. Neither augmentation nor sampling "
         "is guaranteed to outperform the original models or random sampling."
     )
 
@@ -1128,10 +1157,11 @@ with about:
         "eight readings and eight missingness flags.\n"
         "**3. Random Forest:** An ensemble of supervised decision trees using "
         "the same features.\n"
-        "**4. Graph-Aware Likelihood:** A model-based source estimator which "
-        "evaluates all eight candidate zones using exponential graph-distance "
-        "signal decay and Gaussian sensor noise. It can predict an unobserved room, "
-        "but is given simulator parameter settings that ML models do not receive."
+        "**4. Graph-Aware Bayesian Inference:** A model-based source estimator "
+        "that tests all eight candidate source zones, including unobserved rooms, "
+        "against a range of plausible signal intensities, graph decay values "
+        "and sensor noise levels. It integrates out these unknown parameters "
+        "without using the true event configuration."
     )
     st.markdown(
         "**Robust training:** The original ML classifiers are retained as "
