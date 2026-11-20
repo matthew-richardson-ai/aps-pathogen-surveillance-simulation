@@ -445,7 +445,13 @@ with demo_tab:
         st.metric(ARGMAX_LABEL, zone_label(predict_baseline(snap.readings)))
         graph_guess, graph_probs = graph_for_snapshot(snap)
         st.metric("Graph-Aware Likelihood", zone_label(graph_guess))
-        st.caption("Uses the configured signal-decay and sensor-noise model; not a trained ML algorithm.")
+        st.caption("Uses known simulated decay, signal intensity and noise; not a trained ML model.")
+        top_sources = sorted(graph_probs.items(), key=lambda item: item[1], reverse=True)[:3]
+        st.caption(
+            "Top candidate zones: " +
+            " · ".join(f"{zone_label(zone)} ({prob:.1%})" for zone, prob in top_sources)
+            + " — estimates under the assumed simulator model"
+        )
         st.metric("Random seed", params.seed)
         room = st.selectbox(
             "Inspect a Room", sorted(snap.readings),
@@ -602,6 +608,19 @@ with demo_tab:
                 key="demo_result_condition",
             )
             subset = saved[saved["condition"] == selected_condition].copy()
+            methods = sorted(subset["model"].unique())
+            preferred = ["Logistic Regression", "Random Forest", GRAPH_MODEL_NAME]
+            shown_methods = st.multiselect(
+                "Methods shown in chart and table", methods,
+                default=[name for name in preferred if name in methods],
+                key="demo_results_models",
+            )
+            if GRAPH_MODEL_NAME not in methods:
+                st.info(
+                    "Saved evaluations predate the new graph-aware method. "
+                    "Recalculate the repeated trials to compare the upgraded system."
+                )
+            subset = subset[subset["model"].isin(shown_methods)].copy()
             subset["strategy"] = subset["strategy"].map({
                 "static": "No Additional Sample",
                 "random": "Random Extra Sample",
@@ -619,10 +638,11 @@ with demo_tab:
                 ))
             fig.update_layout(
                 title=f"Measured accuracy: {selected_condition}",
-                barmode="group", height=390,
+                barmode="group", height=440,
                 yaxis=dict(range=[0, 115], title="Exact-source accuracy (%)",
                            gridcolor="#33475D", dtick=20),
-                margin=dict(t=75, l=58, r=30, b=50),
+                margin=dict(t=70, l=65, r=30, b=110),
+                legend=dict(orientation="h", x=0, y=-0.32),
                 paper_bgcolor=PANEL, plot_bgcolor=PANEL,
                 font=dict(color=MUTED),
             )
@@ -646,7 +666,16 @@ with demo_tab:
                 "Model", "Sampling Strategy", "Trials", "Accuracy",
                 "Mean Graph Error (Edges)", "Additional Measurements",
             ]
+            if "missing_source_accuracy" in subset:
+                metrics_table["Source Unobserved Accuracy"] = subset[
+                    "missing_source_accuracy"
+                ].map(lambda v: "N/A" if pd.isna(v) else f"{v:.1%}")
             st.dataframe(metrics_table, hide_index=True, use_container_width=True)
+            st.caption(
+                "Source Unobserved Accuracy measures trials where the true source's "
+                "initial sensor reading was missing. All results use seeded independent "
+                "synthetic events; graph likelihood assumes known simulator parameters."
+            )
     else:
         st.info("Repeated-trial evaluation results are not available for display.")
 
