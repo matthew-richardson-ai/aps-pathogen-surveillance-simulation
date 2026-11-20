@@ -105,16 +105,12 @@ def _new_classifiers() -> dict[str, Pipeline]:
     }
 
 
-def _graph_test_predictions(testing: pd.DataFrame) -> list[str | None] | None:
-    """Graph likelihood can be scored only when held-out metadata is present.
+def _graph_test_predictions(testing: pd.DataFrame) -> list[str | None]:
+    """Score the blind graph estimator using observed held-out readings alone.
 
-    This uses the true *simulation parameters*, not the true source label.
-    Crucially, it has more information than the data-only ML classifiers.
-    The distinction is annotated throughout the presentation.
+    The source labels and scenario metadata are available in the test file
+    for evaluation, but they NEVER enter this prediction function.
     """
-    metadata = {"source_intensity", "decay_rate", "noise_std"}
-    if not metadata.issubset(testing.columns):
-        return None
     predictions = []
     for _, record in testing.iterrows():
         observed = {
@@ -122,12 +118,7 @@ def _graph_test_predictions(testing: pd.DataFrame) -> list[str | None] | None:
             else float(record[f"{zone}_reading"])
             for zone in ZONES
         }
-        guess, _ = graph_prediction(
-            observed,
-            source_intensity=float(record["source_intensity"]),
-            decay_rate=float(record["decay_rate"]),
-            noise_std=float(record["noise_std"]),
-        )
+        guess, _ = graph_prediction(observed)
         predictions.append(guess)
     return predictions
 
@@ -192,9 +183,8 @@ def train_models(
     robust = [(name, estimator.predict(X_test).tolist())
               for name, estimator in models.items()]
     predictions = [("Strongest sensor", _baseline_predict(testing)), *original, *robust]
-    graph_guesses = _graph_test_predictions(testing)
-    if graph_guesses is not None:
-        predictions.append((GRAPH_MODEL_NAME, graph_guesses))
+    # Blind graph inference is always comparable: no privileged test metadata.
+    predictions.append((GRAPH_MODEL_NAME, _graph_test_predictions(testing)))
 
     truths = testing["true_source_node"].astype(str).tolist()
     results = []
