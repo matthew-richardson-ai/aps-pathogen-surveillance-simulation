@@ -91,11 +91,16 @@ def main() -> None:
         "models": list(evaluated_models),
         "comparison": ["static", "random", "information_gain"],
         "sample_budget": {"static": 0, "random": 1, "information_gain": 1},
+        "evaluation_version": "blind_graph_marginalized_v1",
+        "graph_method": GRAPH_MODEL_NAME,
+        "graph_parameter_access": "NONE: inferred from readings; fixed public parameter grid",
+        "scoring_only_truth_access": True,
         "limitations": (
-            "Synthetic spatial snapshots only; ML probabilities uncalibrated. "
-            "Graph likelihood uses known simulator intensity, decay and noise "
-            "settings; ML models use readings and missingness flags alone. "
-            "Missing-source accuracy is measured after revealing ground truth."
+            "Synthetic spatial snapshots only; model probabilities are "
+            "conditional on assumptions and not calibrated. Graph inference "
+            "integrates over scenario-independent intensity/decay/noise "
+            "ranges and receives no true per-event simulator parameters. "
+            "Source truth is used for scoring only."
         ),
     }
     (output / "experiment_metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
