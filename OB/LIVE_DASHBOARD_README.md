@@ -38,6 +38,22 @@ The dashboard uses these measured results; numbers are not hard-coded.
 - **Adaptive Sensor Selection:** Choose a learned classifier or graph likelihood
   as the probability source. The entropy-based selector chooses one currently
   unobserved room. Random and information-gain policies each get one sample.
+- **Additional Reveal True Source controls:** The same reveal action is
+  available immediately beside the source predictions and repeated-trial graph.
+  Both buttons and the facility checkbox use synchronized Streamlit callbacks;
+  changing them never modifies the prediction algorithm.
+- **Within-event Quick Takeaway:** The adaptive-sampling before/after table
+  automatically counts changed predictions; once revealed, it summarizes exact
+  matches and graph-distance improvements or regressions.
+- **Previous vs. Current Scenario:** Generating a new seed or loading another
+  preset automatically preserves the *previous event* in Streamlit session
+  state, including any extra sample collected there. A side-by-side table
+  compares predictions and observed sensor coverage, with short takeaways.
+  After reveal, it also compares exact matches and graph-distance errors for
+  each event **against its own source**. This descriptive comparison is not
+  evidence that changing the seed or sampling policy caused an improvement.
+  Use **Clear Previous Comparison** to discard that saved snapshot; browser
+  session restarts also clear it.
 
 ## Models and fair comparisons
 
