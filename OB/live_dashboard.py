@@ -933,8 +933,9 @@ with adaptive_tab:
     with c_method:
         selected_models = st.multiselect(
             "Models to evaluate",
-            ["Logistic Regression", "Random Forest"],
-            default=["Logistic Regression", "Random Forest"],
+            ["Logistic Regression", "Random Forest", GRAPH_MODEL_NAME,
+             "Logistic Regression (Original)", "Random Forest (Original)"],
+            default=["Logistic Regression", "Random Forest", GRAPH_MODEL_NAME],
             key="adaptive_evaluation_models",
         )
     if st.button("Run matched sampling experiment", type="primary"):
@@ -967,6 +968,21 @@ with adaptive_tab:
             "Mean graph error (edges)", "Extra samples per run",
         ]
         st.dataframe(results_view, hide_index=True, use_container_width=True)
+        if "source_initially_observed" in matched:
+            missing_cases = matched[matched["source_initially_observed"] == 0]
+            if not missing_cases.empty:
+                st.markdown("**When the source's own sensor was unavailable**")
+                missing_scores = missing_cases.groupby(
+                    ["model", "strategy"], sort=False
+                ).agg(
+                    Trials=("correct", "size"),
+                    Accuracy=("correct", "mean"),
+                ).reset_index()
+                missing_scores["Accuracy"] = missing_scores["Accuracy"].map(
+                    lambda value: f"{value:.1%}"
+                )
+                missing_scores.columns = ["Model", "Sampling strategy", "Trials", "Accuracy"]
+                st.dataframe(missing_scores, hide_index=True, use_container_width=True)
         fig = go.Figure()
         label_map = {
             "static": "No additional sample",
@@ -988,8 +1004,9 @@ with adaptive_tab:
             yaxis=dict(title="Exact-source accuracy (%)", range=[0, 115],
                        gridcolor="#27394e", dtick=20),
             paper_bgcolor=PANEL, plot_bgcolor=PANEL,
-            font=dict(color=MUTED), height=415,
-            margin=dict(t=75, l=58, r=30, b=50),
+            font=dict(color=MUTED), height=440,
+            margin=dict(t=75, l=58, r=30, b=110),
+            legend=dict(orientation="h", x=0, y=-0.32),
         )
         st.plotly_chart(fig, use_container_width=True)
         for name, group in summary.groupby("model", sort=False):
@@ -1021,10 +1038,11 @@ with adaptive_tab:
             st.dataframe(display_matched, hide_index=True, use_container_width=True)
     st.caption(
         "This is a controlled spatial snapshot simulation. Source truth is used "
-        "only for scoring. The information-gain policy uses model probabilities "
-        "that are not calibrated and assumes the simulator's graph-distance "
-        "signal model and sampling noise are known. It is not guaranteed to "
-        "outperform random sampling."
+        "only for scoring. ML-driven information gain uses uncalibrated class "
+        "probabilities. Graph likelihood uses known simulated intensity, decay "
+        "and sensor noise settings, so it has more prior information than the "
+        "data-only ML classifiers. Neither augmentation nor adaptive sampling "
+        "is guaranteed to outperform the original models or random sampling."
     )
 
 
@@ -1080,12 +1098,22 @@ with about:
     st.subheader("Localization Algorithms")
     st.markdown(
         "**1. Maximum-Sensor-Reading (Argmax) Baseline:** A deterministic "
-        "reference algorithm selecting the location of the highest observed signal. "
-        "There is no training step.\n"
-        "**2. Logistic Regression:** A supervised multiclass classifier trained "
-        "to recognize source locations from eight readings and eight missingness flags.\n"
-        "**3. Random Forest:** A supervised ensemble of decision trees trained "
-        "on the same inputs for a fair comparison."
+        "reference algorithm selecting the highest observed signal without training.\n"
+        "**2. Logistic Regression:** A supervised multiclass classifier using "
+        "eight readings and eight missingness flags.\n"
+        "**3. Random Forest:** An ensemble of supervised decision trees using "
+        "the same features.\n"
+        "**4. Graph-Aware Likelihood:** A model-based source estimator which "
+        "evaluates all eight candidate zones using exponential graph-distance "
+        "signal decay and Gaussian sensor noise. It can predict an unobserved room, "
+        "but is given simulator parameter settings that ML models do not receive."
+    )
+    st.markdown(
+        "**Robust training:** The original ML classifiers are retained as "
+        "reference controls. The upgraded classifiers also learn from randomly "
+        "masked and additionally noised *training-only* views with 2–7 potentially "
+        "observed zones. Validation and held-out test examples are never augmented. "
+        "Accuracy is measured against unchanged test data; improvements are not assumed."
     )
     st.markdown(r"**Argmax prediction:** $\hat{s} = \underset{i \in O}{\operatorname{arg\,max}}\; r_i$")
     st.subheader("Experimental Method")
