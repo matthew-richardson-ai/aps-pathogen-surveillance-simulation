@@ -443,6 +443,9 @@ with demo_tab:
         available = sum(reading is not None for reading in snap.readings.values())
         st.metric("Available sensor readings", f"{available} / 8")
         st.metric(ARGMAX_LABEL, zone_label(predict_baseline(snap.readings)))
+        graph_guess, graph_probs = graph_for_snapshot(snap)
+        st.metric("Graph-Aware Likelihood", zone_label(graph_guess))
+        st.caption("Uses the configured signal-decay and sensor-noise model; not a trained ML algorithm.")
         st.metric("Random seed", params.seed)
         room = st.selectbox(
             "Inspect a Room", sorted(snap.readings),
@@ -468,9 +471,15 @@ with demo_tab:
 
     st.markdown("#### 2. Source Predictions")
     st.write(
-        "**Argmax Baseline** uses the maximum observed reading without training. "
-        "**Logistic Regression** and **Random Forest** instead learn patterns "
-        "from readings and missingness indicators using Justin's synthetic training scenarios."
+        "**Argmax** selects the strongest available sensor. **Logistic Regression** "
+        "and **Random Forest** learn from observed values and missingness; their "
+        "robust versions also train on deliberately sparse and noisy views. "
+        "**Graph-Aware Likelihood** scores all eight candidate sources using "
+        "the known simulated signal-decay and noise settings."
+    )
+    st.caption(
+        "Graph-Aware Likelihood has additional simulator-parameter information "
+        "not provided to the trained models. Compare its results with that advantage in mind."
     )
     if not st.session_state.get("ml_enabled", False):
         if st.button("Train and Compare Models", key="demo_train_models", type="primary"):
@@ -483,17 +492,20 @@ with demo_tab:
     else:
         try:
             artifacts = load_ml_artifacts()
-            predictions = predict_models(artifacts, snap.readings)
+            predictions = all_current_predictions(artifacts, snap)
             predictions = predictions.rename(columns={
                 "model": "Model", "predicted_source": "Predicted Source",
-                "max_class_probability": "Largest Class Probability",
+                "max_class_probability": "Top Model Probability",
             })
             predictions["Predicted Source"] = predictions["Predicted Source"].map(zone_label)
-            predictions["Largest Class Probability"] = predictions["Largest Class Probability"].map(
+            predictions["Top Model Probability"] = predictions["Top Model Probability"].map(
                 lambda p: "N/A" if pd.isna(p) else f"{p:.1%}"
             )
             st.dataframe(predictions, hide_index=True, use_container_width=True)
-            st.caption("Largest class probability is not a calibrated measure of confidence.")
+            st.caption(
+                "Original = standard training; unmarked ML = sparse/noise-augmented training. "
+                "Probabilities are model-dependent estimates, not guarantees of correctness."
+            )
         except (FileNotFoundError, ValueError) as error:
             st.error(f"Model comparison unavailable: {error}")
 
@@ -505,15 +517,14 @@ with demo_tab:
     sample_left, sample_right = st.columns([1.4, 1])
     with sample_left:
         demo_selector = st.selectbox(
-            "Sampling model", ["Logistic Regression", "Random Forest"],
+            "Sampling model", ["Logistic Regression", "Random Forest", GRAPH_MODEL_NAME],
             key="demo_selector",
         )
         candidates = [zone for zone, reading in snap.readings.items() if reading is None]
         if snap.requested_zone is None and candidates:
             if st.button("Select and Measure Next Zone", type="primary", key="demo_sample"):
                 try:
-                    artifacts = load_ml_artifacts()
-                    prior = source_prior(artifacts.models[demo_selector], snap.readings)
+                    prior = sampling_prior(demo_selector, snap)
                     choice = choose_next_zone(
                         build_facility(), snap.readings, prior,
                         source_intensity=params.source_intensity,
@@ -521,7 +532,8 @@ with demo_tab:
                     )
                     if choice is not None:
                         st.session_state.active_snapshot = sample_one_more(snap, choice.zone)
-                        st.session_state.ml_enabled = True
+                        if demo_selector != GRAPH_MODEL_NAME:
+                            st.session_state.ml_enabled = True
                         st.session_state.auto_sample_details = {
                             "model": demo_selector, "zone": choice.zone,
                             "gain": choice.expected_gain_bits,
@@ -547,24 +559,30 @@ with demo_tab:
         else:
             st.caption("The selector has not yet requested an extra measurement.")
 
-    if snap.requested_zone is not None and st.session_state.get("ml_enabled", False):
+    if snap.requested_zone is not None:
         try:
-            trained_models = load_ml_artifacts()
-            previous_readings = simulate(params).readings
-            initial = predict_models(trained_models, previous_readings)
-            updated = predict_models(trained_models, snap.readings)
-            comparison = initial[["model", "predicted_source"]].merge(
-                updated[["model", "predicted_source"]],
-                on="model", suffixes=("_initial", "_updated"),
-            )
-            comparison.columns = ["Model", "Before", "After"]
-            baseline_comparison = pd.DataFrame([{
-                "Model": ARGMAX_LABEL,
-                "Before": snap.initial_prediction,
-                "After": predict_baseline(snap.readings),
-            }])
-            comparison = pd.concat([baseline_comparison, comparison], ignore_index=True)
-            comparison = display_zone_columns(comparison, ["Before", "After"])
+            previous = simulate(params)
+            initial_graph, _ = graph_for_snapshot(previous)
+            updated_graph, _ = graph_for_snapshot(snap)
+            rows = [
+                {"Model": ARGMAX_LABEL, "Before": snap.initial_prediction,
+                 "After": predict_baseline(snap.readings)},
+                {"Model": GRAPH_MODEL_NAME, "Before": initial_graph,
+                 "After": updated_graph},
+            ]
+            if st.session_state.get("ml_enabled", False):
+                trained_models = load_ml_artifacts()
+                initial = all_current_predictions(trained_models, previous)
+                updated = all_current_predictions(trained_models, snap)
+                original = initial[["model", "predicted_source"]].merge(
+                    updated[["model", "predicted_source"]],
+                    on="model", suffixes=("_before", "_after"),
+                )
+                rows.extend({
+                    "Model": r["model"], "Before": r["predicted_source_before"],
+                    "After": r["predicted_source_after"],
+                } for _, r in original.iterrows() if r["model"] != GRAPH_MODEL_NAME)
+            comparison = display_zone_columns(pd.DataFrame(rows), ["Before", "After"])
             st.markdown("**Source Predictions Before and After Sampling**")
             st.dataframe(comparison, hide_index=True, use_container_width=True)
         except (FileNotFoundError, ValueError) as error:
