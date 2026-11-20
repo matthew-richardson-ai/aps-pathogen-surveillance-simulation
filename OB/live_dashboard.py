@@ -432,7 +432,7 @@ with demo_tab:
         else:
             graph_figure = facility_plot(snap, st.session_state.demo_reveal)
         st.plotly_chart(
-            graph_figure, use_container_width=True,
+            graph_figure, use_container_width=True, key="aps_demo_facility",
             config={"displaylogo": False, "scrollZoom": True},
         )
         if demo_view == "3D Rooms":
@@ -652,7 +652,7 @@ with demo_tab:
                 paper_bgcolor=PANEL, plot_bgcolor=PANEL,
                 font=dict(color=MUTED),
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="aps_demo_results")
             st.caption(
                 "Both random and information-gain strategies use one additional measurement; "
                 "the static strategy uses none. Results are based on repeated synthetic trials."
@@ -724,7 +724,7 @@ with live:
         else:
             live_figure = facility_plot(snap, st.session_state.reveal_truth)
         st.plotly_chart(
-            live_figure, use_container_width=True,
+            live_figure, use_container_width=True, key="aps_live_facility",
             config={"displaylogo": False, "scrollZoom": True},
         )
         if live_view == "3D Rooms":
@@ -748,7 +748,7 @@ with live:
             + ", ".join(zone_label(z) for z in sorted(build_facility().neighbors(room)))
         )
         st.plotly_chart(reading_plot(snap), use_container_width=True,
-                        config={"displaylogo": False})
+                        key="aps_live_readings", config={"displaylogo": False})
         st.subheader("One Additional Measurement")
         st.caption("Compare a manual additional sample with model-assisted sampling that selects a currently unobserved zone.")
         candidates = sorted([z for z, value in snap.readings.items() if value is None])
@@ -869,7 +869,7 @@ with models_tab:
                 paper_bgcolor=PANEL, plot_bgcolor=PANEL, font=dict(color=MUTED),
                 height=440, margin=dict(t=70, l=285, r=45, b=65), showlegend=False,
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="aps_heldout_accuracy")
             st.subheader("Predictions on the Current Scenario")
             current_predictions = all_current_predictions(trained, snap)
             initial_predictions = all_current_predictions(trained, simulate(params))
@@ -910,7 +910,7 @@ with models_tab:
                 height=470, margin=dict(t=65, l=55, r=45, b=130),
                 legend=dict(orientation="h", y=-0.46, x=0),
             )
-            st.plotly_chart(condition_fig, use_container_width=True)
+            st.plotly_chart(condition_fig, use_container_width=True, key="aps_condition_accuracy")
             st.download_button(
                 "Download held-out prediction records",
                 trained.test_predictions.to_csv(index=False).encode("utf-8"),
@@ -1018,7 +1018,7 @@ with adaptive_tab:
             margin=dict(t=75, l=58, r=30, b=110),
             legend=dict(orientation="h", x=0, y=-0.32),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key="aps_adaptive_accuracy")
         for name, group in summary.groupby("model", sort=False):
             rates = dict(zip(group["strategy"], group["accuracy"]))
             st.caption(
@@ -1082,7 +1082,7 @@ with batch_tab:
         fig.update_layout(title="Argmax Baseline Accuracy by True Source", height=345,
                           paper_bgcolor=PANEL, plot_bgcolor=PANEL, font=dict(color=MUTED),
                           yaxis=dict(range=[0, 110], title="Accuracy (%)", gridcolor="#26384f"))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key="aps_baseline_accuracy")
         st.caption("All trials count toward accuracy, including abstentions as incorrect. Graph-distance error excludes abstentions.")
         st.download_button("Download trial records", results.to_csv(index=False).encode(),
                            file_name="aps_baseline_trials.csv", mime="text/csv")
