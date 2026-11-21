@@ -1,0 +1,79 @@
+APS SIMULATION VALIDATION
+============================================================
+PASS: Same seed selects the same source
+
+Source: zone_1
+------------------------------------------------------------
+PASS: Source signal is 1.0 and strictly strongest
+PASS: Ideal signal decreases with distance
+PASS: Zero noise and missingness preserve ideal readings
+PASS: Same seed reproduces noisy and missing readings
+PASS: Available readings stay between 0.0 and 1.0
+PASS: 100% missing rate removes every reading
+
+Source: zone_2
+------------------------------------------------------------
+PASS: Source signal is 1.0 and strictly strongest
+PASS: Ideal signal decreases with distance
+PASS: Zero noise and missingness preserve ideal readings
+PASS: Same seed reproduces noisy and missing readings
+PASS: Available readings stay between 0.0 and 1.0
+PASS: 100% missing rate removes every reading
+
+Source: zone_3
+------------------------------------------------------------
+PASS: Source signal is 1.0 and strictly strongest
+PASS: Ideal signal decreases with distance
+PASS: Zero noise and missingness preserve ideal readings
+PASS: Same seed reproduces noisy and missing readings
+PASS: Available readings stay between 0.0 and 1.0
+PASS: 100% missing rate removes every reading
+
+Source: zone_4
+------------------------------------------------------------
+PASS: Source signal is 1.0 and strictly strongest
+PASS: Ideal signal decreases with distance
+PASS: Zero noise and missingness preserve ideal readings
+PASS: Same seed reproduces noisy and missing readings
+PASS: Available readings stay between 0.0 and 1.0
+PASS: 100% missing rate removes every reading
+
+Source: zone_5
+------------------------------------------------------------
+PASS: Source signal is 1.0 and strictly strongest
+PASS: Ideal signal decreases with distance
+PASS: Zero noise and missingness preserve ideal readings
+PASS: Same seed reproduces noisy and missing readings
+PASS: Available readings stay between 0.0 and 1.0
+PASS: 100% missing rate removes every reading
+
+Source: zone_6
+------------------------------------------------------------
+PASS: Source signal is 1.0 and strictly strongest
+PASS: Ideal signal decreases with distance
+PASS: Zero noise and missingness preserve ideal readings
+PASS: Same seed reproduces noisy and missing readings
+PASS: Available readings stay between 0.0 and 1.0
+PASS: 100% missing rate removes every reading
+
+Source: zone_7
+------------------------------------------------------------
+PASS: Source signal is 1.0 and strictly strongest
+PASS: Ideal signal decreases with distance
+PASS: Zero noise and missingness preserve ideal readings
+PASS: Same seed reproduces noisy and missing readings
+PASS: Available readings stay between 0.0 and 1.0
+PASS: 100% missing rate removes every reading
+
+Source: zone_8
+------------------------------------------------------------
+PASS: Source signal is 1.0 and strictly strongest
+PASS: Ideal signal decreases with distance
+PASS: Zero noise and missingness preserve ideal readings
+PASS: Same seed reproduces noisy and missing readings
+PASS: Available readings stay between 0.0 and 1.0
+PASS: 100% missing rate removes every reading
+
+============================================================
+Results: 49/49 checks passed
+All validation checks passed.
