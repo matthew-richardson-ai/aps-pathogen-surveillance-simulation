@@ -111,3 +111,22 @@ python -m pytest Tests/test_robust_training.py Tests/test_graph_likelihood.py Te
 Open `Docs/APS_Demo_Runbook.md` for the off-screen presentation sequence.
 Keep the repository's original APS simulation modules and source datasets
 intact; model improvements are layered on top, not substitutions for evidence.
+
+## Owen dashboard integration (APS Part 2)
+
+The Experiment Lab's Argmax trial results now include a prediction confusion
+matrix (rows are actual source zones; columns are predicted zones plus an
+explicit no-prediction category) and accuracy versus **observed missing-zone
+count**, with sample counts shown. Both plots derive from the same seeded trials
+and preserve abstentions as incorrect for accuracy.
+
+In Live Facility, switch to **2D Network** and expand **Edit schematic facility
+positions** to adjust zone coordinates. This is presentation-only: zone IDs,
+connectivity, 3D geometry, source simulation, and inference are unchanged.
+Positions remain local to the current Streamlit browser session.
+
+These changes adapt the useful evaluation and layout ideas from
+`OB/new-version/aps_dashboard.py` without replacing the integrated dashboard
+or claiming that uploaded CSVs are live simulations.
+
+Regression tests: `python -m pytest Tests/test_dashboard_diagnostics.py -q`.
