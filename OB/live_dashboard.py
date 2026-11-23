@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
 
 from Simulation.facility import build_facility
 from OB.prediction_scoring import score_current_predictions, score_before_after
+from OB.dashboard_diagnostics import prediction_counts, accuracy_by_missingness
 from OB.scenario_comparison import comparison_table, scenario_takeaways, sampling_takeaways
 from live_engine import Scenario, simulate, sample_one_more, predict_baseline, baseline_error, batch_baseline
 from Localization.ml_pipeline import train_models, predict_models, reading_features
@@ -326,6 +327,9 @@ POS = {
     "zone_4": (0.65, 1.05), "zone_5": (0.65, -1.05), "zone_6": (1.9, 0),
     "zone_7": (3.1, 0), "zone_8": (4.25, 0),
 }
+
+st.session_state.setdefault("facility_positions", POS.copy())
+POS.update(st.session_state["facility_positions"])
 
 def facility_plot(snapshot, reveal):
     fig = go.Figure()
@@ -872,6 +876,30 @@ with live:
             key="live_facility_view", horizontal=True,
         )
         st.toggle("Reveal hidden source", key="reveal_truth", on_change=sync_live_reveal)
+        if live_view == "2D Network":
+            with st.expander("Edit schematic facility positions"):
+                st.caption("Changes affect the 2D display only. Canonical graph connections, simulation inputs, and 3D rooms remain unchanged.")
+                positions_frame = pd.DataFrame([
+                    {"Zone": zone, "X": POS[zone][0], "Y": POS[zone][1]}
+                    for zone in sorted(POS)
+                ])
+                edited_positions = st.data_editor(
+                    positions_frame, disabled=["Zone"], hide_index=True,
+                    use_container_width=True, key="aps_2d_position_editor",
+                )
+                numeric = edited_positions[["X", "Y"]].apply(pd.to_numeric, errors="coerce")
+                if numeric.notna().all().all():
+                    updated = {
+                        zone: (float(x), float(y))
+                        for zone, x, y in zip(
+                            edited_positions["Zone"], numeric["X"], numeric["Y"]
+                        )
+                    }
+                    if set(updated) == set(POS):
+                        POS.update(updated)
+                        st.session_state["facility_positions"] = updated
+                else:
+                    st.warning("Every X/Y coordinate must be numeric; keeping the last valid layout.")
         if live_view == "3D Rooms":
             live_figure = facility_3d_plot(
                 snap, build_facility(), predict_baseline(snap.readings),
@@ -1257,6 +1285,47 @@ with batch_tab:
                           paper_bgcolor=PANEL, plot_bgcolor=PANEL, font=dict(color=MUTED),
                           yaxis=dict(range=[0, 110], title="Accuracy (%)", gridcolor="#26384f"))
         st.plotly_chart(fig, use_container_width=True, key="aps_baseline_accuracy")
+        st.markdown("#### Diagnostic evaluation (Owen integration)")
+        st.caption(
+            "The following plots use these same seeded simulation trial records—not "
+            "a separate uploaded dataset. Missingness means the actual number of "
+            "unavailable zones; a no-reading prediction is counted as incorrect."
+        )
+        zone_order = sorted(build_facility().nodes)
+        confusion = prediction_counts(results, zone_order)
+        heatmap = go.Figure(go.Heatmap(
+            z=confusion.to_numpy(), x=[zone_label(z) for z in confusion.columns],
+            y=[zone_label(z) for z in confusion.index],
+            colorscale="Blues", text=confusion.to_numpy(),
+            texttemplate="%{text}", hovertemplate="True: %{y}<br>Predicted: %{x}<br>Trials: %{z}<extra></extra>",
+        ))
+        heatmap.update_layout(
+            title="Argmax prediction confusion matrix",
+            xaxis_title="Predicted source", yaxis_title="Actual source",
+            paper_bgcolor=PANEL, plot_bgcolor=PANEL, font=dict(color=MUTED),
+            height=470, margin=dict(l=85, r=20, t=65, b=105),
+        )
+        st.plotly_chart(heatmap, use_container_width=True, key="aps_argmax_confusion")
+        missing_summary = accuracy_by_missingness(results, total_zones=len(zone_order))
+        missing_fig = go.Figure(go.Bar(
+            x=missing_summary["missing_readings"], y=missing_summary["accuracy"] * 100,
+            text=[f"n={v}" for v in missing_summary["trials"]],
+            textposition="outside", marker_color=CYAN,
+            customdata=missing_summary["trials"],
+            hovertemplate="%{x} missing readings<br>Accuracy %{y:.1f}%<br>Trials %{customdata}<extra></extra>",
+        ))
+        missing_fig.update_layout(
+            title="Argmax accuracy vs. actual missing sensor readings",
+            xaxis=dict(title="Unavailable zones (of 8)", dtick=1),
+            yaxis=dict(title="Exact-source accuracy (%)", range=[0, 115]),
+            paper_bgcolor=PANEL, plot_bgcolor=PANEL, font=dict(color=MUTED),
+            height=370, margin=dict(l=65, r=30, t=65, b=65),
+        )
+        st.plotly_chart(missing_fig, use_container_width=True, key="aps_argmax_missingness")
+        st.download_button(
+            "Download confusion matrix CSV", confusion.to_csv().encode("utf-8"),
+            file_name="aps_argmax_confusion_matrix.csv", mime="text/csv",
+        )
         st.caption("All trials count toward accuracy, including abstentions as incorrect. Graph-distance error excludes abstentions.")
         st.download_button("Download trial records", results.to_csv(index=False).encode(),
                            file_name="aps_baseline_trials.csv", mime="text/csv")
