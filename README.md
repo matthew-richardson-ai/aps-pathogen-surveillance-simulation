@@ -76,6 +76,23 @@ Streamlit prints a local address in the terminal. Open **http://localhost:8501**
 
 The dashboard trains/loads the source-localization models from the committed synthetic dataset when required. The dataset must remain in the repository. The current branch includes CSV files under `Justin/Data/`; the model loader also supports the newer `Team/Justin/Data/` folder layout.
 
+### macOS / Linux equivalent
+
+From a terminal, clone the same branch and create the virtual environment:
+
+```bash
+git clone --branch feature/demo-ready-aps --single-branch https://github.com/matthew-richardson-ai/aps-pathogen-surveillance-simulation.git
+cd aps-pathogen-surveillance-simulation
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt -r OB/requirements.txt
+python -m pytest -q
+python -m streamlit run OB/live_dashboard.py
+```
+
+Open the local Streamlit URL printed in the terminal (normally `http://localhost:8501`). Keep that terminal open while the dashboard is running; press `Ctrl+C` to stop it.
+
 ## Run the simulation and reproduce the evaluation
 
 These commands are optional for someone who only wants to open the dashboard.
