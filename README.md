@@ -46,8 +46,10 @@ If the `py` launcher is unavailable, use `python -m venv .venv` after checking t
 
 ```powershell
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt -r OB/requirements.txt
+python -m pip install -r requirements.txt
 ```
+
+This one requirements file installs everything needed for the simulator, AI models, dashboard, experiment scripts, and tests. The separate `OB/requirements.txt` is kept for older dashboard-only workflows, but you do not need to install it again.
 
 **3. Run the tests.**
 
@@ -81,7 +83,7 @@ Use a terminal in the project folder after cloning or extracting the ZIP:
 python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt -r OB/requirements.txt
+python -m pip install -r requirements.txt
 python -m pytest -q
 python Scripts/prepare_demo_results.py
 python -m streamlit run OB/live_dashboard.py
@@ -164,7 +166,7 @@ python -m pytest -q
 If something does not start:
 
 - **"No APS training dataset found":** Check that the CSV files in `Justin/Data/` or `Team/Justin/Data/` were included.
-- **"No module named streamlit" or another missing package:** Activate the virtual environment and rerun `python -m pip install -r requirements.txt -r OB/requirements.txt`.
+- **"No module named streamlit" or another missing package:** Activate the virtual environment and rerun `python -m pip install -r requirements.txt`.
 - **Repeated-trial results are unavailable in the dashboard:** Run `python Scripts/prepare_demo_results.py` from the project root and reload the page.
 - **The browser does not open automatically:** Use the local URL printed by Streamlit.
 
