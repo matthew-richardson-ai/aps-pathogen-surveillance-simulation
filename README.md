@@ -147,7 +147,7 @@ The current evaluation uses 1,500 held-out test cases and 100 fresh simulated ev
 
 With missing readings, robust Logistic Regression reached 73% accuracy without another sample, 94% with a random sample, and 100% with an information-gain sample in that 100-trial condition. In combined stress, the graph-aware model reached 57% with information-gain sampling.
 
-These are results from a controlled simulation, not a real-world detection system. The additional measurement uses a fixed, cleaner noise setting (standard deviation 0.04). A better result than static sampling does not, by itself, establish that choosing a location intelligently is consistently better than choosing one at random. The comparisons and limitations are discussed in [the final results document](Docs/APS_Final_Results_2026-11-23.md).
+These are results from a controlled simulation, not a real-world detection system. The additional measurement uses a fixed, cleaner noise setting (standard deviation 0.04). A better result than static sampling does not, by itself, establish that choosing a location intelligently is consistently better than choosing one at random. The comparisons and limitations are discussed in [the final results document](Docs/APS_Final_Results.md).
 
 ## Other ways to check the code
 
