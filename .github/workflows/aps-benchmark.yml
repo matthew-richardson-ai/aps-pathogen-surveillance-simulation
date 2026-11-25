@@ -1,0 +1,71 @@
+# Collect real APS accuracy numbers using the current, reproducible models.
+# These remain experimental synthetic observations, not clinical evidence.
+name: APS Robustness Benchmark
+
+on:
+  push:
+    branches:
+      - feature/demo-ready-aps
+    paths:
+      - "Localization/**"
+      - "Adaptive/**"
+      - "Simulation/**"
+      - "OB/adaptive_experiments.py"
+      - "OB/live_engine.py"
+      - "Scripts/prepare_demo_results.py"
+      - ".github/workflows/aps-benchmark.yml"
+  pull_request:
+    branches:
+      - feature/one-step-adaptive-sampling
+    paths:
+      - "Localization/**"
+      - "Adaptive/**"
+      - "Simulation/**"
+      - "OB/adaptive_experiments.py"
+      - "OB/live_engine.py"
+      - "Scripts/prepare_demo_results.py"
+      - ".github/workflows/aps-benchmark.yml"
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout evaluated commit
+        uses: actions/checkout@v4
+      - name: Use Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install simulation and ML dependencies
+        run: |
+          python -m pip install -r requirements.txt
+      - name: Compute unchanged-heldout and matched sampling results
+        run: |
+          python Scripts/prepare_demo_results.py
+      - name: Summarize accuracy of all evaluated approaches
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          heldout = pd.read_csv("Results/Demo/heldout_model_summary.csv")
+          trials = pd.read_csv("Results/Demo/sampling_summary.csv")
+          print("HELD-OUT EXACT-SOURCE ACCURACY")
+          print(heldout[["model", "trials", "accuracy"]].to_string(index=False))
+          print("\nCOMBINED-STRESS MATCHED TRIALS")
+          selected = trials[trials["condition"] == "Combined Stress"]
+          cols = ["model", "strategy", "trials", "accuracy", "missing_source_accuracy"]
+          print(selected[cols].to_string(index=False))
+          PY
+      - name: Preserve synthetic benchmark CSVs
+        uses: actions/upload-artifact@v4
+        with:
+          name: aps-robustness-evaluation
+          path: |
+            Results/Demo/heldout_model_summary.csv
+            Results/Demo/heldout_model_predictions.csv
+            Results/Demo/sampling_summary.csv
+            Results/Demo/sampling_runs.csv
+            Results/Demo/experiment_metadata.json
+          if-no-files-found: error

@@ -1,53 +1,132 @@
-# APS Live Simulation Dashboard
+# APS Dashboard — Classroom Demonstration and Model Comparisons
 
-This is a first interactive UI that uses the **real eight-zone APS simulation modules**. It is added alongside Owen's existing visualization/evaluation starter, not as a replacement.
+The dashboard uses the real eight-zone APS NetworkX facility, synthetic source
+signals, noise/missingness and one-step sampling engine. **It is an idealized
+spatial snapshot, not a live biosensor system, airflow model, or clinical tool.**
 
-## Run from the VS Code terminal (repository root)
+## Start and verify on Windows
+
+From the repository root, with the local virtual environment activated:
 
 ```powershell
 python -m pip install -r requirements.txt
 python -m pip install -r OB/requirements.txt
+python -m pytest -q
+python Scripts/prepare_demo_results.py
 python -m streamlit run OB/live_dashboard.py
 ```
 
-Streamlit should open a browser window, typically at http://localhost:8501.
+Run the experiment-preparation script after changing models or sampling logic,
+**not on every Streamlit startup**. Results are saved under `Results/Demo`.
+The dashboard uses these measured results; numbers are not hard-coded.
 
-## Functionality
+## Demonstration controls
 
-- Six condition presets: normal, limited coverage, noisy sensors, missing sensors, weak source, and combined stress.
-- Change the hidden source (random or fixed), random seed, initially observed zones, measurement noise, missing-reading probability, source strength, and graph-distance decay.
-- Interactive Plotly facility visualization: hover/zoom to inspect sensor values. Display or hide the hidden source.
-- Run the existing strongest-sensor baseline from Localization/baselines.py, including graceful handling of zero available readings.
-- Request **one manually chosen additional observation** at a zone without a reading, and inspect the changed baseline prediction.
-- Run independent baseline-only trials, graph exact-source accuracy by source zone, and export CSV.
+- **APS Demonstration:** Fixed, repeatable Normal / Missing Readings / Combined
+  Stress examples. Combined Stress fixes the source at Zone 6 and seed 81.
+- **Generate New Scenario (Random Source):** Advances the seed and randomizes
+  the source while retaining the chosen noise, coverage and decay settings.
+  A random event can pick the same zone twice by chance.
+- **3D Rooms / 2D Network:** Rotatable schematic eight-room view or graph view,
+  built from the canonical NetworkX topology. Gray means no reading, not zero.
+  Hover for observations, or use **Inspect a Room** to highlight a location.
+- **Reveal True Source:** Hidden during inference. Once revealed, both the
+  main prediction table and before/after table display **Correct?**, shortest-
+  path **Graph Distance (edges)** and **Error Reduction (edges)**. These are
+  calculated in a separate presentation-only scoring module, never by any
+  predictor or sampling policy.
+- **Adaptive Sensor Selection:** Choose a learned classifier or graph likelihood
+  as the probability source. The entropy-based selector chooses one currently
+  unobserved room. Random and information-gain policies each get one sample.
+- **Additional Reveal True Source controls:** The same reveal action is
+  available immediately beside the source predictions and repeated-trial graph.
+  Both buttons and the facility checkbox use synchronized Streamlit callbacks;
+  changing them never modifies the prediction algorithm.
+- **Within-event Quick Takeaway:** The adaptive-sampling before/after table
+  automatically counts changed predictions; once revealed, it summarizes exact
+  matches and graph-distance improvements or regressions.
+- **Previous vs. Current Scenario:** Generating a new seed or loading another
+  preset automatically preserves the *previous event* in Streamlit session
+  state, including any extra sample collected there. A side-by-side table
+  compares predictions and observed sensor coverage, with short takeaways.
+  After reveal, it also compares exact matches and graph-distance errors for
+  each event **against its own source**. This descriptive comparison is not
+  evidence that changing the seed or sampling policy caused an improvement.
+  Use **Clear Previous Comparison** to discard that saved snapshot; browser
+  session restarts also clear it.
 
-This code directly imports Simulation/facility.py, Simulation/outbreak.py, Simulation/sensors.py, and Localization/baselines.py; the graph is not the illustrative one in Owen's original example.
+## Models and fair comparisons
 
-## Scope and limitations
+| Method | Predictive evidence |
+|---|---|
+| **Argmax Baseline** | Picks the highest available observed sensor value; no fitting |
+| **Logistic Regression (Original)** | Original Justin training data, eight readings + eight missingness flags |
+| **Random Forest (Original)** | Original Justin training data and same 16 features |
+| **Logistic Regression** | Original training rows plus three sparse/noisy *training-only* views per row |
+| **Random Forest** | Same augmented training views, same 16 inputs |
+| **Graph-Aware Bayesian Inference** | Observed readings, known graph topology and a fixed range of plausible (unknown) intensity/decay/noise values |
 
-- Each run is a **spatial snapshot** with exponential graph-distance signal decay, not actual airflow, pathogen transport, or a time animation.
-- The extra sample is selected **manually**, not by the AI. It assumes an independent measurement can be obtained at a missing/unobserved zone, with noise SD 0.04. A maximum of one extra measurement is allowed.
-- The dashboard has an optional Model comparison tab that trains Logistic Regression and Random Forest from Justin's saved synthetic dataset and compares both against the baseline on its held-out test split.
-- Repeated-trial statistics are **new synthetic results computed by this app**, not claims about real-world performance. No-reading cases count as incorrect for accuracy and are excluded from mean graph-distance error.
+All source predictors are blind to the source label and actual per-event
+signal/noise settings. The graph-aware method assumes the public graph and
+exponential signal family and marginalizes over predefined physical parameter
+ranges. It uses censored Gaussian likelihood for clipped sensor readings and
+the fixed follow-up instrument noise SD 0.04. Missing observations provide no
+evidence and all-missing scenarios abstain. The graph model still has stronger
+structural assumptions than the data-only supervised classifiers.
 
-Owen's original OB/aps_app.py remains available to visualize actual model evaluation CSVs as integration progresses.
+Robust training is not guaranteed to help: both the original and augmented
+classifiers are evaluated on the same held-out partition and remain visible
+to reveal wins **and losses**. Test/validation examples are never augmented or
+used to train the classifiers. See `Docs/APS_Robust_Localization_Methods.md`
+for assumptions, pseudocode and evaluation constraints.
 
-## Model comparison
+## Experimental results
 
-The new tab adds a three-way held-out accuracy table, graph-distance error, accuracy by synthetic condition, and downloadable individual predictions. All-missing initial observations result in abstention rather than an unsupported model guess. The app uses the preassigned train/test labels and checks persistent group IDs do not overlap between train and test. These results concern simulated scenarios only.
+- **Model Comparison:** Held-out exact-source accuracy, graph error, and
+  condition-specific performance across original/augmented models. The graph
+  method also runs on records without simulation-parameter metadata.
+- **Adaptive Sampling:** Matched static/no-sample, one-random-sample, and
+  one-information-gain-sample runs on identical seeded events. Compare
+  exact-source accuracy, graph error, additional sample budget, and results when
+  the true source's own initial sensor is missing.
+- **Experiment Lab:** Independent Argmax-only repeated trials.
+- **Research Method:** Algorithm names, training procedures and interpretation
+  caveats, suitable for a student audience rather than a presenter checklist.
 
-## Validation
+Saved final evaluation covers 100 independent events per condition: Normal,
+High Noise, Missing Readings and Combined Stress. Check actual computed
+metrics before describing gains. A single successful seed is not evidence of
+aggregate superiority. Probability scores assume a model and are not universal
+confidence guarantees. **Any Results/Demo files saved using the previous
+Known Params graph method are outdated and must be regenerated before
+quoting graph accuracy.**
+
+## Test suites
 
 ```powershell
-python -m pytest Tests/test_live_engine.py -q
+python -m pytest -q
+python -m pytest Tests/test_robust_training.py Tests/test_graph_likelihood.py Tests/test_graph_sampling_integration.py Tests/test_ml_pipeline.py -q
 ```
 
-The engine was exercised with six deterministic unit tests locally using the same canonical graph/sensor functions. The full Streamlit browser application still needs to be launched and checked on a machine with Streamlit installed.
+Open `Docs/APS_Demo_Runbook.md` for the off-screen presentation sequence.
+Keep the repository's original APS simulation modules and source datasets
+intact; model improvements are layered on top, not substitutions for evidence.
 
-## Next integration
+## Owen dashboard integration (APS Part 2)
 
-1. Open **Model comparison** and click **Train models and evaluate held-out test data**. The dashboard reads the most recent timestamped CSV in `Team/Justin/Data`; only initial readings and missingness flags are used as features. Results are computed on the dataset's preassigned test partition.
-2. Change the live scenario settings and observe the updated Logistic Regression and Random Forest predictions. Their largest class probabilities are not calibrated confidence measures.
-3. Run `python -m pytest Tests/test_ml_pipeline.py -q` for the model integration tests.
-4. Implement and validate a genuine confidence-/information-based one-step sampling policy and budget-matched random comparator.
-5. Export paired static versus one-sample predictions to Owen's evaluation dashboard.
+The Experiment Lab's Argmax trial results now include a prediction confusion
+matrix (rows are actual source zones; columns are predicted zones plus an
+explicit no-prediction category) and accuracy versus **observed missing-zone
+count**, with sample counts shown. Both plots derive from the same seeded trials
+and preserve abstentions as incorrect for accuracy.
+
+In Live Facility, switch to **2D Network** and expand **Edit schematic facility
+positions** to adjust zone coordinates. This is presentation-only: zone IDs,
+connectivity, 3D geometry, source simulation, and inference are unchanged.
+Positions remain local to the current Streamlit browser session.
+
+These changes adapt the useful evaluation and layout ideas from
+`OB/new-version/aps_dashboard.py` without replacing the integrated dashboard
+or claiming that uploaded CSVs are live simulations.
+
+Regression tests: `python -m pytest Tests/test_dashboard_diagnostics.py -q`.

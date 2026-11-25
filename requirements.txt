@@ -1,42 +1,33 @@
-﻿# ============================================================
-# APS - Adaptive Pathogen Surveillance Simulation
-# Core Dependencies
-# ============================================================
+# Adaptive Pathogen Surveillance (APS)
+# CSC 4240, Tennessee Technological University
+#
+# Tested project target: Python 3.11
+# Install the complete project, dashboard, and test environment with:
+#     python -m pip install -r requirements.txt
+#
+# These packages cover the simulation, AI models, evaluation scripts,
+# Streamlit dashboard, and automated tests.
 
+# Numerical computing and experiment data
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10
 
-### Remember you can use pip install -r requirements.txt
-### This installs the requirements
+# AI models and facility graph
+scikit-learn>=1.3
+networkx>=3.0
 
-# Data Processing & Numerical Computing
-numpy
-pandas
+# Dashboard and charts
+streamlit>=1.34
+plotly>=5.20
+matplotlib>=3.7
 
-# Machine Learning
-scikit-learn
+# Automated tests
+pytest>=7.4
 
-# Graph Modeling
-networkx
+# Project configuration utilities
+PyYAML>=6.0
+python-dotenv>=1.0
 
-# Visualization
-matplotlib
-
-# Configuration
-PyYAML
-
-# Environment Variables
-python-dotenv
-
-# Testing
-pytest
-
-# ============================================================
-# Future / Experimental Dependencies
-# biopython  # deferred genomics extension
-# ============================================================
-
-# Deep-learning framework
-# NOTE: Installation may depend on CPU/GPU configuration.
-# torch
-
-# Hugging Face model support for genomic AI experiments
-# transformers
+# Genomic analysis and deep-learning libraries belong to deferred work.
+# They are not required to run the CSC 4240 project.

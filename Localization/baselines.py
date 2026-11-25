@@ -6,7 +6,11 @@ from collections.abc import Mapping
 
 
 def strongest_sensor(readings: Mapping[str, float | None]) -> str:
-    """Predict the source as the zone with the strongest available reading."""
+    """Maximum-Sensor-Reading (Argmax) Baseline.
+
+    A deterministic heuristic that returns the zone associated with the
+    maximum observed sensor value. This algorithm has no training step.
+    """
     available = {
         zone: value
         for zone, value in readings.items()
