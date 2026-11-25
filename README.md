@@ -1,159 +1,187 @@
 # Adaptive Pathogen Surveillance (APS)
 
-**CSC 4240 — Artificial Intelligence | Tennessee Technological University**
+**CSC 4240 Artificial Intelligence | Tennessee Technological University**
 
-**Team:** Matthew Richardson, Emmanuel Zuniga, Justin Hortopanu, Jimmy Finnegan, Owen Brown.
+**Team:** Emmanuel Zuniga, Justin Hortopanu, Jimmy Finnegan, Owen Brown, and Matthew Richardson.
 
-APS is an undergraduate AI project investigating whether AI methods can localize the source of a simulated environmental contamination event from noisy or missing sensor readings, and whether selecting one additional observation using expected information gain improves localization over random selection.
+APS is a Python project that tests how well existing AI methods can locate the source of a simulated contamination event when sensor readings are incomplete or noisy. It also asks whether choosing a useful place to take one more measurement improves the prediction.
 
-**Project scope:** APS is an eight-zone spatial snapshot simulation. It is not a clinical tool, a real-world biosensor deployment, an airflow or disease-transmission model, or a pathogen-detection product. Genomic analysis and automated response recommendations are deferred extensions, not completed CSC 4240 functionality.
+The project uses an eight-zone facility simulation. It does not connect to physical sensors or diagnose real pathogens.
 
-## Implemented system
+**For the instructor or TA:** The fastest way to review the project is to follow **Run the project** below, then open the Streamlit dashboard. The full evaluation script generates the results displayed in the repeated-trial comparison. You can also run the automated tests to check the code.
 
-1. **Facility and synthetic events:** an eight-zone NetworkX graph, hidden source selection, exponential signal decay over graph distance, sensor noise, missing readings, and reproducible random seeds.
-2. **Baseline localization:** strongest-observed-sensor (Argmax) prediction, with abstention if all readings are missing.
-3. **AI-based source inference:** Logistic Regression and Random Forest classifiers, original and sparsity/noise-augmented training variants, plus Graph-Aware Bayesian Inference that marginalizes unknown signal parameters rather than receiving the true event settings.
-4. **One-step additional sampling:** static/no-extra-sample control, random sampling, and model-assisted expected-information-gain sampling. Random and information-gain strategies each receive one additional measurement.
-5. **Evaluation:** held-out exact-source accuracy and graph-distance error; matched seeded sampling trials under normal, high-noise, missing-reading, and combined-stress conditions.
-6. **Interactive dashboard:** Streamlit application at `OB/live_dashboard.py`, with 3D facility visualization, editable 2D schematic layout, model comparisons, adaptive sampling, experiment evaluation, and CSV exports.
-7. **Tests:** 66 automated tests were passing in the team's latest local verification. The test suite is in `Tests/`.
+## Get the project
 
-## Requirements
+**Completed project branch:** [feature/demo-ready-aps](https://github.com/matthew-richardson-ai/aps-pathogen-surveillance-simulation/tree/feature/demo-ready-aps)
 
-- **Python 3.11** (the repository's GitHub Actions test workflow uses Python 3.11)
-- Git
-- Internet access during initial dependency installation
+The repository is public. The finished dashboard and evaluation code are on this branch, which is not yet merged into the default `main` branch.
 
-Run all commands below from the repository root folder. The full implementation and current experiment results are on the `feature/demo-ready-aps` branch. Until that branch is merged into `main`, use the branch-specific clone command below.
+If you're using **the course submission ZIP**, extract it and open a terminal in the folder containing this `README.md` and `requirements.txt`. You can skip cloning.
 
-## Install and run on Windows (PowerShell)
+If you're downloading directly from GitHub, clone the completed branch:
 
-### 1. Clone the completed project branch
-
-```powershell
+```bash
 git clone --branch feature/demo-ready-aps --single-branch https://github.com/matthew-richardson-ai/aps-pathogen-surveillance-simulation.git
 cd aps-pathogen-surveillance-simulation
 ```
 
-### 2. Create and activate a virtual environment
+All remaining commands should be run from that project folder.
+
+## Run the project
+
+You'll need **Python 3.11**. Git is only needed if you are cloning the repository. An internet connection is needed to install Python packages.
+
+### Windows (PowerShell)
+
+**1. Create and activate a virtual environment.**
 
 ```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 
-If the `py` launcher is unavailable, use `python -m venv .venv` instead. If PowerShell blocks virtual-environment activation, allow it for the current terminal session only:
+If the `py` launcher is unavailable, use `python -m venv .venv` after checking that `python --version` reports Python 3.11. If PowerShell blocks activation, run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` and try the activation command again. This changes the policy only for that terminal session.
 
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\.venv\Scripts\Activate.ps1
-```
-
-### 3. Install all project and dashboard dependencies
+**2. Install the dependencies.**
 
 ```powershell
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt -r OB/requirements.txt
 ```
 
-The root requirements file installs the simulation, data-science, machine-learning, and testing packages. `OB/requirements.txt` adds the dashboard and visualization dependencies, including Streamlit and Plotly.
-
-### 4. Run the automated tests
+**3. Run the tests.**
 
 ```powershell
 python -m pytest -q
 ```
 
-The project team most recently verified **66 passing tests**. Test output may include a different count if tests are added or changed after this README was written.
+The team most recently verified 66 passing tests. The exact count may change if additional tests are added.
 
-### 5. Launch the interactive dashboard
-
-```powershell
-python -m streamlit run OB/live_dashboard.py
-```
-
-Streamlit prints a local address in the terminal. Open **http://localhost:8501** if the browser does not open automatically. Keep the terminal running while using the dashboard; press `Ctrl+C` in that terminal to stop it.
-
-The dashboard trains/loads the source-localization models from the committed synthetic dataset when required. The dataset must remain in the repository. The current branch includes CSV files under `Justin/Data/`; the model loader also supports the newer `Team/Justin/Data/` folder layout.
-
-### macOS / Linux equivalent
-
-From a terminal, clone the same branch and create the virtual environment:
-
-```bash
-git clone --branch feature/demo-ready-aps --single-branch https://github.com/matthew-richardson-ai/aps-pathogen-surveillance-simulation.git
-cd aps-pathogen-surveillance-simulation
-python3.11 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt -r OB/requirements.txt
-python -m pytest -q
-python -m streamlit run OB/live_dashboard.py
-```
-
-Open the local Streamlit URL printed in the terminal (normally `http://localhost:8501`). Keep that terminal open while the dashboard is running; press `Ctrl+C` to stop it.
-
-## Run the simulation and reproduce the evaluation
-
-These commands are optional for someone who only wants to open the dashboard.
-
-### Run one end-to-end baseline simulation
-
-From the repository root:
-
-```powershell
-python Scripts/run_pipeline.py
-```
-
-This runs one seeded simulation and prints the hidden source, sensor readings, baseline prediction, and graph-distance error for inspection.
-
-### Generate the full experimental results
+**4. Generate the saved experiment results.**
 
 ```powershell
 python Scripts/prepare_demo_results.py
 ```
 
-This trains the models and runs the held-out and matched adaptive-sampling experiments. It creates:
+This step trains and evaluates the models, and creates the CSV files used for the dashboard's repeated-trial charts. It may take longer than the other steps. The dashboard can still launch without these files, but that saved-results section will be empty until this command finishes.
 
-- `Results/Demo/heldout_model_summary.csv`
-- `Results/Demo/heldout_model_predictions.csv`
-- `Results/Demo/sampling_summary.csv`
-- `Results/Demo/sampling_runs.csv`
-- `Results/Demo/experiment_metadata.json`
+**5. Start the dashboard.**
 
-The experiment evaluates 1,500 untouched held-out examples and 100 independently seeded events in each of four simulation conditions. The matched sampling comparison evaluates five model variants under three strategies: no additional sample, one random additional sample, and one information-gain additional sample.
+```powershell
+python -m streamlit run OB/live_dashboard.py
+```
 
-**Important:** `Results/` is Git-ignored, so these generated CSV and JSON files remain local unless deliberately copied into a submission archive. Preserve the files used for the final report if the instructor requests the experimental outputs.
+Open the local URL shown by Streamlit, normally [http://localhost:8501](http://localhost:8501). The first load may take a moment while the models train. Leave the terminal open while using the dashboard. Press `Ctrl+C` in that terminal to stop it.
 
-## Dataset
+### macOS or Linux
 
-The model pipeline discovers the committed file matching `outbreak_dataset_*.csv` under either `Team/Justin/Data/` or `Justin/Data/`. Do not remove or rename the dataset folder when copying or zipping the project. The project can use the already-committed dataset; regenerating it is not required to launch the dashboard or reproduce the current evaluation.
+Use a terminal in the project folder after cloning or extracting the ZIP:
 
-## Current measured results (synthetic experiments only)
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt -r OB/requirements.txt
+python -m pytest -q
+python Scripts/prepare_demo_results.py
+python -m streamlit run OB/live_dashboard.py
+```
 
-Held-out exact-source accuracy:
+Open the Streamlit URL printed in the terminal. Press `Ctrl+C` to stop the application.
 
-- Argmax baseline: **86.20%**
-- Logistic Regression, original / robust: **92.00% / 92.47%**
-- Random Forest, original / robust: **92.93% / 93.00%**
-- Graph-Aware Bayesian Inference (blind event parameters): **91.47%**
+## What to explore in the dashboard
 
-Selected matched 100-trial results:
+The dashboard contains six tabs:
 
-- Missing Readings, robust Logistic Regression: **73% static**, **94% random**, **100% information gain**.
-- Combined Stress, blind Graph-Aware Bayesian Inference: **36% static**, **56% random**, **57% information gain**.
+1. **APS Demonstration:** Try preset scenarios, compare predictions, collect a follow-up reading, and reveal the true source after the predictions have been made.
+2. **Live Facility:** View the eight connected zones, sensor readings, and missing observations. The 2D layout can be rearranged for display without changing the simulation.
+3. **Model Comparison:** Compare the strongest-sensor baseline, Logistic Regression, Random Forest, and graph-aware Bayesian inference.
+4. **Adaptive Sampling:** Compare random sampling with information-gain sampling using the same extra-measurement budget.
+5. **Experiment Lab:** Run repeated baseline trials and inspect accuracy, a confusion matrix, and performance by number of missing readings.
+6. **Research Method:** Read about the selected AI methods and how the experiments were designed.
 
-All outcomes are specific to this controlled synthetic setup. Follow-up measurements use a fixed noise standard deviation of 0.04. A gain over the no-extra-sample condition does not by itself show that information-gain selection is better than a sample-budget-matched random policy. Single-condition results are exploratory and should not be generalized without additional replications and uncertainty analysis.
+The dashboard uses synthetic observations generated by the project. Some comparisons are interactive, and others use the saved outputs from the evaluation script.
 
-See `Docs/APS_Final_Results_2026-11-23.md` for the current blind-inference results and limitations. `Docs/APS_Benchmark_Findings.md` contains a historical benchmark using an earlier Known Params graph method; **do not quote its obsolete graph-model percentages as current results**.
+## How the AI methods work
 
-## Additional documentation
+The strongest-sensor rule is our simple baseline. Logistic Regression learns weighted relationships between sensor readings and possible source zones. The integrated Random Forest combines **120 decision trees** to capture more complex patterns. Both classifiers are evaluated with their original training data and with extra noisy or incomplete training views.
 
-- `OB/LIVE_DASHBOARD_README.md` — dashboard controls and evaluation caveats
-- `OB/ADAPTIVE_SAMPLING_README.md` — adaptive sampling overview
-- `Docs/APS_Robust_Localization_Methods.md` — estimator assumptions and methods
-- `Docs/APS_Demo_Runbook.md` — demonstration sequence
-- `Docs/APS_Final_Results_2026-11-23.md` — current experiment findings
-- `Docs/Project_Proposal_Revised.md` — original project scope
+Graph-Aware Bayesian Inference uses the facility connections and plausible signal patterns to compare possible source locations. It does not receive the true source or the hidden signal settings for an event. For follow-up sampling, we compare a random location with a location selected to reduce expected uncertainty.
 
-The CSC 4240 report must not exceed **four pages**. Follow the instructor's final iLearn instructions for the upload format and submission location.
+The project tests these methods rather than assuming one approach must always win. We measure exact-source accuracy and graph-distance error, including under high noise, missing readings, and combined stress.
+
+## Data and experiment outputs
+
+The project includes a synthetic training dataset under `Justin/Data/`. The model loader also recognizes `Team/Justin/Data/` if the team folders are reorganized. **Keep the dataset folder in place** when extracting or packaging the source code. No real pathogen data or physical sensors are needed.
+
+To generate the results again:
+
+```bash
+python Scripts/prepare_demo_results.py
+```
+
+The script writes five files to `Results/Demo/`:
+
+- `heldout_model_summary.csv`: accuracy and graph error on the untouched test split
+- `heldout_model_predictions.csv`: held-out predictions for inspection
+- `sampling_summary.csv`: accuracy and sample budget by model, policy, and condition
+- `sampling_runs.csv`: individual matched trial records
+- `experiment_metadata.json`: settings and evaluation details
+
+These files are generated locally and are intentionally excluded from Git by `.gitignore`. If reviewing a submitted ZIP, use the included copies if present or run the script above to recreate them.
+
+The current evaluation uses 1,500 held-out test cases and 100 fresh simulated events in each of four conditions. Random sampling and information-gain sampling are given one extra measurement each. Static sampling gets none.
+
+### Selected results from the final evaluation
+
+| Method | Held-out exact-source accuracy |
+|---|---:|
+| Strongest-sensor baseline | 86.20% |
+| Logistic Regression (Original) | 92.00% |
+| Logistic Regression (Robust) | 92.47% |
+| Random Forest (Original) | 92.93% |
+| Random Forest (Robust) | 93.00% |
+| Graph-Aware Bayesian Inference | 91.47% |
+
+With missing readings, robust Logistic Regression reached 73% accuracy without another sample, 94% with a random sample, and 100% with an information-gain sample in that 100-trial condition. In combined stress, the graph-aware model reached 57% with information-gain sampling.
+
+These are results from a controlled simulation, not a real-world detection system. The additional measurement uses a fixed, cleaner noise setting (standard deviation 0.04). A better result than static sampling does not, by itself, establish that choosing a location intelligently is consistently better than choosing one at random. The comparisons and limitations are discussed in [the final results document](Docs/APS_Final_Results_2026-11-23.md).
+
+## Other ways to check the code
+
+Run a single baseline simulation and inspect the printed source, readings, prediction, and graph error:
+
+```bash
+python Scripts/run_pipeline.py
+```
+
+Run the full test suite again:
+
+```bash
+python -m pytest -q
+```
+
+If something does not start:
+
+- **"No APS training dataset found":** Check that the CSV files in `Justin/Data/` or `Team/Justin/Data/` were included.
+- **"No module named streamlit" or another missing package:** Activate the virtual environment and rerun `python -m pip install -r requirements.txt -r OB/requirements.txt`.
+- **Repeated-trial results are unavailable in the dashboard:** Run `python Scripts/prepare_demo_results.py` from the project root and reload the page.
+- **The browser does not open automatically:** Use the local URL printed by Streamlit.
+
+## Project files and further reading
+
+| Location | Purpose |
+|---|---|
+| `Simulation/` | Facility, source signals, and sensor behavior |
+| `Localization/` | Baseline, supervised ML, and Bayesian source estimation |
+| `Adaptive/` | Information-gain sampling |
+| `OB/` | Streamlit dashboard and sampling experiments |
+| `Evaluation/` | Evaluation metrics |
+| `Scripts/` | Simulation and experiment entry points |
+| `Tests/` | Automated tests |
+| `Justin/Data/` | Committed synthetic training data |
+| `Docs/` | Methods, results, and presentation notes |
+
+For dashboard controls, see [the dashboard guide](OB/LIVE_DASHBOARD_README.md). For model assumptions, see [the methods document](Docs/APS_Robust_Localization_Methods.md). The older [benchmark findings](Docs/APS_Benchmark_Findings.md) describe a previous graph model that used true event parameters; those older graph-model figures should not be confused with the current blind Bayesian evaluation.
+
+APS was built for CSC 4240 to explore how existing AI techniques can help with a source-localization problem. Its scope is limited to reproducible spatial simulations; a practical monitoring system would require real sensors, validated data, and a much more detailed physical model.
